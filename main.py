@@ -9,6 +9,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from config import load_config
 from database.engine import init_db
 from utils.scheduler import setup_scheduler
+from utils.logger import setup_logging
 
 from handlers import (
     user_commands,
@@ -17,11 +18,7 @@ from handlers import (
     admin_request,
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)-8s | %(name)s — %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+setup_logging()
 logger = logging.getLogger(__name__)
 
 

@@ -21,8 +21,14 @@ router.message.filter(IsAdmin())
 
 
 # ─── /report — CSV-отчёт за текущий месяц ────────────────────────────────────
+def _a(message: Message) -> str:
+    u = message.from_user
+    return f"[admin id={u.id} name={u.full_name!r}]"
+
+
 @router.message(Command("report"))
 async def cmd_report(message: Message):
+    logger.info("📊 /report | %s", _a(message))
     today = date.today()
 
     async with AsyncSessionFactory() as session:
@@ -71,6 +77,7 @@ async def cmd_report(message: Message):
     csv_bytes = ("\ufeff" + output.getvalue()).encode("utf-8")
     filename = f"report_{month_names_gen[today.month]}_{today.year}.csv"
 
+    logger.info("   сгенерирован отчёт: %d заявок, файл=%s | %s", len(rows), filename, _a(message))
     await message.answer_document(
         document=BufferedInputFile(csv_bytes, filename=filename),
         caption=(
@@ -84,16 +91,19 @@ async def cmd_report(message: Message):
 # ─── Список новых заявок ─────────────────────────────────────────────────────
 @router.message(F.text == "📬 Список новых заявок")
 async def cmd_pending_requests(message: Message):
+    logger.info("📬 Список новых заявок | %s", _a(message))
     async with AsyncSessionFactory() as session:
         rows = await get_pending_requests(session)
 
     if not rows:
+        logger.info("   нет pending-заявок | %s", _a(message))
         await message.answer(
             "✅ Новых заявок нет — все обработаны.",
             reply_markup=admin_main_menu(),
         )
         return
 
+    logger.info("   найдено pending-заявок: %d | %s", len(rows), _a(message))
     await message.answer(
         f"📬 <b>Новые заявки на рассмотрении: {len(rows)}</b>\n\nНажмите кнопки под каждой заявкой:",
         parse_mode="HTML",
@@ -115,6 +125,7 @@ async def cmd_pending_requests(message: Message):
 # ─── Управление сотрудниками ──────────────────────────────────────────────────
 @router.message(F.text == "👥 Управление сотрудниками")
 async def cmd_manage_employees(message: Message):
+    logger.info("👥 Управление сотрудниками | %s", _a(message))
     async with AsyncSessionFactory() as session:
         result = await session.execute(select(User).order_by(User.full_name))
         users = result.scalars().all()
@@ -159,6 +170,7 @@ async def cmd_make_admin(message: Message):
             return
         user.role = UserRole.admin
         await session.commit()
+        logger.info("👑 /make_admin: пользователь id=%d %r назначен администратором | %s", tg_id, user.full_name, _a(message))
 
     await message.answer(
         f"✅ <b>{user.full_name}</b> назначен администратором.",
@@ -189,6 +201,7 @@ async def cmd_remove_admin(message: Message):
             return
         user.role = UserRole.user
         await session.commit()
+        logger.info("🔻 /remove_admin: права сняты у id=%d %r | %s", tg_id, user.full_name, _a(message))
 
     await message.answer(
         f"✅ Права администратора у <b>{user.full_name}</b> сняты.",

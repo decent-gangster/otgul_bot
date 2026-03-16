@@ -1,3 +1,5 @@
+import logging
+
 from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.filters import Command
@@ -8,6 +10,7 @@ from database.engine import AsyncSessionFactory
 from database.crud import get_or_create_user, get_user_month_days, get_requests_by_user
 from database.models import UserRole, RequestStatus
 
+logger = logging.getLogger(__name__)
 router = Router()
 
 STATUS_LABELS = {
@@ -17,17 +20,26 @@ STATUS_LABELS = {
 }
 
 
+def _u(message: Message) -> str:
+    """Короткая строка для идентификации пользователя в логах."""
+    u = message.from_user
+    return f"[id={u.id} name={u.full_name!r}]"
+
+
 @router.message(Command("start"))
 async def cmd_start(message: Message):
+    logger.info("▶ /start | пользователь %s", _u(message))
     async with AsyncSessionFactory() as session:
         user = await get_or_create_user(session, message.from_user.id, message.from_user.full_name)
 
     if user.role == UserRole.admin:
         role_label = "👑 Администратор"
         menu = admin_main_menu()
+        logger.info("   роль: ADMIN | показано меню администратора | %s", _u(message))
     else:
         role_label = "👤 Сотрудник"
         menu = user_main_menu()
+        logger.info("   роль: USER  | показано меню сотрудника | %s", _u(message))
 
     await message.answer(
         f"Привет, <b>{message.from_user.first_name}</b>! 👋\n\n"
@@ -41,6 +53,7 @@ async def cmd_start(message: Message):
 @router.message(Command("balance"))
 @router.message(F.text == "💰 Мой баланс")
 async def cmd_balance(message: Message):
+    logger.info("💰 Баланс | %s", _u(message))
     today = date.today()
 
     async with AsyncSessionFactory() as session:
@@ -50,6 +63,11 @@ async def cmd_balance(message: Message):
 
     approved = [r for r in all_requests if r.status == RequestStatus.approved]
     pending  = [r for r in all_requests if r.status == RequestStatus.pending]
+
+    logger.info(
+        "   баланс=%.1f | отгулов в месяце=%d | одобрено=%d | pending=%d | %s",
+        user.vacation_balance, days_this_month, len(approved), len(pending), _u(message)
+    )
 
     month_names = [
         "", "январе", "феврале", "марте", "апреле", "мае", "июне",
@@ -70,16 +88,19 @@ async def cmd_balance(message: Message):
 
 @router.message(F.text == "📋 Мои заявки")
 async def cmd_my_requests(message: Message):
+    logger.info("📋 Мои заявки | %s", _u(message))
     async with AsyncSessionFactory() as session:
         user = await get_or_create_user(session, message.from_user.id, message.from_user.full_name)
         requests = await get_requests_by_user(session, user.id)
+
+    logger.info("   найдено заявок: %d | %s", len(requests), _u(message))
 
     if not requests:
         await message.answer("У вас пока нет заявок. Нажмите «📝 Подать заявку».")
         return
 
     lines = []
-    for req in requests[:10]:  # показываем последние 10
+    for req in requests[:10]:
         start = req.start_date.strftime("%d.%m.%Y")
         end = req.end_date.strftime("%d.%m.%Y")
         status = STATUS_LABELS.get(req.status, req.status)
@@ -95,6 +116,7 @@ async def cmd_my_requests(message: Message):
 
 @router.message(F.text == "🔙 Назад")
 async def cmd_back(message: Message):
+    logger.info("🔙 Назад | %s", _u(message))
     async with AsyncSessionFactory() as session:
         user = await get_or_create_user(session, message.from_user.id, message.from_user.full_name)
 

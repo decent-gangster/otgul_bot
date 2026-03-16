@@ -17,7 +17,11 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
-# ─── Фильтр: только для администраторов ──────────────────────────────────────
+def _a(event) -> str:
+    u = event.from_user
+    return f"[admin id={u.id} name={u.full_name!r}]"
+
+
 class IsAdmin(Filter):
     async def __call__(self, event: CallbackQuery | Message, admin_ids: list[int]) -> bool:
         return event.from_user.id in admin_ids
@@ -27,7 +31,6 @@ router.callback_query.filter(IsAdmin())
 router.message.filter(IsAdmin())
 
 
-# ─── Вспомогательная функция: загрузить заявку вместе с пользователем ────────
 async def _get_request_with_user(session, request_id: int):
     result = await session.execute(
         select(TimeOffRequest, User)
@@ -37,7 +40,7 @@ async def _get_request_with_user(session, request_id: int):
     return result.one_or_none()
 
 
-# ─── Нажатие «Одобрить» ──────────────────────────────────────────────────────
+# ─── Одобрить ────────────────────────────────────────────────────────────────
 @router.callback_query(RequestActionCallback.filter(F.action == "approve"))
 async def approve_request(
     call: CallbackQuery,
@@ -46,33 +49,35 @@ async def approve_request(
     group_id: int,
 ):
     request_id = callback_data.request_id
+    logger.info("✅ Одобрить заявку #%d | %s", request_id, _a(call))
 
     async with AsyncSessionFactory() as session:
         row = await _get_request_with_user(session, request_id)
         if not row:
+            logger.warning("   заявка #%d не найдена | %s", request_id, _a(call))
             await call.answer("⚠️ Заявка не найдена!", show_alert=True)
             return
 
         req, user = row
 
         if req.status != RequestStatus.pending:
+            logger.warning("   заявка #%d уже обработана (статус=%s) | %s", request_id, req.status, _a(call))
             await call.answer("ℹ️ Заявка уже была обработана ранее.", show_alert=True)
             return
 
         await update_request_status(session, request_id, status=RequestStatus.approved)
+        logger.info("   заявка #%d → approved | сотрудник id=%d %r | %s", request_id, user.tg_id, user.full_name, _a(call))
 
     start_str = req.start_date.strftime("%d.%m.%Y")
     end_str = req.end_date.strftime("%d.%m.%Y")
     type_label = req.type.value
     admin_name = f"@{call.from_user.username}" if call.from_user.username else call.from_user.full_name
 
-    # ── Обновляем сообщение у администратора ────────────────────────────────
     await call.message.edit_text(
         call.message.text + f"\n\n✅ <b>Одобрено</b> администратором {admin_name}",
         parse_mode="HTML",
     )
 
-    # ── Уведомление пользователю ─────────────────────────────────────────────
     try:
         await bot.send_message(
             user.tg_id,
@@ -82,10 +87,10 @@ async def approve_request(
             f"Хорошего отдыха! 😊",
             parse_mode="HTML",
         )
+        logger.info("   уведомление отправлено пользователю id=%d", user.tg_id)
     except Exception as e:
-        logger.warning("Не удалось уведомить пользователя %s: %s", user.tg_id, e)
+        logger.warning("   не удалось уведомить пользователя id=%d: %s", user.tg_id, e)
 
-    # ── Сообщение в общую группу команды ─────────────────────────────────────
     try:
         await bot.send_message(
             group_id,
@@ -94,45 +99,50 @@ async def approve_request(
             f"с <b>{start_str}</b> по <b>{end_str}</b> ({type_label}).",
             parse_mode="HTML",
         )
+        logger.info("   анонс отправлен в группу id=%d", group_id)
     except Exception as e:
-        logger.warning("Не удалось отправить сообщение в группу %s: %s", group_id, e)
+        logger.warning("   не удалось отправить анонс в группу id=%d: %s", group_id, e)
 
     await call.answer("✅ Заявка одобрена")
 
 
-# ─── Нажатие «Отклонить» — запрос причины ────────────────────────────────────
+# ─── Отклонить — запрос причины ──────────────────────────────────────────────
 @router.callback_query(RequestActionCallback.filter(F.action == "reject"))
 async def reject_request_ask_reason(
     call: CallbackQuery,
     callback_data: RequestActionCallback,
     state: FSMContext,
 ):
+    request_id = callback_data.request_id
+    logger.info("❌ Отклонить заявку #%d — запрос причины | %s", request_id, _a(call))
+
     async with AsyncSessionFactory() as session:
-        row = await _get_request_with_user(session, callback_data.request_id)
+        row = await _get_request_with_user(session, request_id)
         if not row:
+            logger.warning("   заявка #%d не найдена | %s", request_id, _a(call))
             await call.answer("⚠️ Заявка не найдена!", show_alert=True)
             return
 
         req, _ = row
         if req.status != RequestStatus.pending:
+            logger.warning("   заявка #%d уже обработана (статус=%s) | %s", request_id, req.status, _a(call))
             await call.answer("ℹ️ Заявка уже была обработана ранее.", show_alert=True)
             return
 
     await state.update_data(
-        request_id=callback_data.request_id,
+        request_id=request_id,
         original_message_id=call.message.message_id,
         original_chat_id=call.message.chat.id,
     )
     await state.set_state(AdminReviewForm.entering_comment)
-
     await call.message.reply(
-        f"✏️ Укажите причину отказа по заявке <b>#{callback_data.request_id}</b>:",
+        f"✏️ Укажите причину отказа по заявке <b>#{request_id}</b>:",
         parse_mode="HTML",
     )
     await call.answer()
 
 
-# ─── Получение причины отказа от админа ──────────────────────────────────────
+# ─── Сохранение причины отказа ───────────────────────────────────────────────
 @router.message(AdminReviewForm.entering_comment)
 async def reject_request_save(message: Message, state: FSMContext, bot: Bot):
     comment = message.text.strip()
@@ -140,9 +150,12 @@ async def reject_request_save(message: Message, state: FSMContext, bot: Bot):
     request_id = data["request_id"]
     await state.clear()
 
+    logger.info("❌ Причина отказа по заявке #%d: %r | %s", request_id, comment[:80], _a(message))
+
     async with AsyncSessionFactory() as session:
         row = await _get_request_with_user(session, request_id)
         if not row:
+            logger.warning("   заявка #%d не найдена при сохранении отказа | %s", request_id, _a(message))
             await message.answer("⚠️ Заявка не найдена!")
             return
 
@@ -150,18 +163,17 @@ async def reject_request_save(message: Message, state: FSMContext, bot: Bot):
         await update_request_status(
             session, request_id, status=RequestStatus.rejected, admin_comment=comment
         )
+        logger.info("   заявка #%d → rejected | сотрудник id=%d %r | %s", request_id, user.tg_id, user.full_name, _a(message))
 
     start_str = req.start_date.strftime("%d.%m.%Y")
     end_str = req.end_date.strftime("%d.%m.%Y")
 
-    # ── Подтверждение администратору ─────────────────────────────────────────
     await message.answer(
         f"❌ Заявка <b>#{request_id}</b> отклонена.\n💬 Причина сохранена: <i>{comment}</i>",
         reply_markup=admin_main_menu(),
         parse_mode="HTML",
     )
 
-    # ── Обновляем исходное сообщение с заявкой ───────────────────────────────
     try:
         await bot.edit_message_text(
             chat_id=data["original_chat_id"],
@@ -173,9 +185,8 @@ async def reject_request_save(message: Message, state: FSMContext, bot: Bot):
             parse_mode="HTML",
         )
     except Exception as e:
-        logger.warning("Не удалось обновить сообщение с заявкой: %s", e)
+        logger.warning("   не удалось обновить сообщение с заявкой #%d: %s", request_id, e)
 
-    # ── Уведомление пользователю ─────────────────────────────────────────────
     try:
         await bot.send_message(
             user.tg_id,
@@ -185,5 +196,6 @@ async def reject_request_save(message: Message, state: FSMContext, bot: Bot):
             f"💬 Комментарий администратора: <i>{comment}</i>",
             parse_mode="HTML",
         )
+        logger.info("   уведомление об отказе отправлено пользователю id=%d", user.tg_id)
     except Exception as e:
-        logger.warning("Не удалось уведомить пользователя %s: %s", user.tg_id, e)
+        logger.warning("   не удалось уведомить пользователя id=%d: %s", user.tg_id, e)
