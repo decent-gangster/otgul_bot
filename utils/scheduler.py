@@ -37,10 +37,10 @@ async def send_daily_digest(bot: Bot, group_id: int) -> None:
 
 def setup_scheduler(bot: Bot, group_id: int) -> AsyncIOScheduler:
     """Создаёт и настраивает планировщик задач."""
-    scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
+    scheduler = AsyncIOScheduler(timezone="Asia/Bishkek")
     scheduler.add_job(
         send_daily_digest,
-        trigger=CronTrigger(hour=9, minute=0, timezone="Europe/Moscow"),
+        trigger=CronTrigger(hour=9, minute=0, timezone="Asia/Bishkek"),
         kwargs={"bot": bot, "group_id": group_id},
         id="daily_digest",
         replace_existing=True,
