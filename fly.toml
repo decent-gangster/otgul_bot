@@ -1,0 +1,15 @@
+# fly.toml — конфигурация Telegram-бота otgul-bot
+
+app = 'otgul-bot'
+primary_region = 'fra'
+
+[build]
+
+[[mounts]]
+  source = "otgul_bot_data"
+  destination = "/data"
+
+[[vm]]
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpus = 1

@@ -1,7 +1,8 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from database.models import Base
 
-DATABASE_URL = "sqlite+aiosqlite:///./otgul_bot.db"
+import os
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:////data/otgul_bot.db")
 
 engine = create_async_engine(DATABASE_URL, echo=False)
 
