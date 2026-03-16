@@ -1,7 +1,11 @@
+import logging
+
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from datetime import date
+
+logger = logging.getLogger(__name__)
 
 from states.request_states import RequestForm
 from keyboards.calendar import build_calendar, CalendarCallback
@@ -174,8 +178,8 @@ async def confirm_request(call: CallbackQuery, state: FSMContext, bot: Bot, admi
     for admin_id in admin_ids:
         try:
             await bot.send_message(admin_id, admin_text, reply_markup=admin_request_keyboard(req.id), parse_mode="HTML")
-        except Exception:
-            pass  # Администратор не запустил бота
+        except Exception as e:
+            logger.warning("Не удалось уведомить администратора %s: %s", admin_id, e)
 
     await call.answer()
 

@@ -40,7 +40,7 @@ def setup_scheduler(bot: Bot, group_id: int) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
     scheduler.add_job(
         send_daily_digest,
-        trigger=CronTrigger(hour=9, minute=0),
+        trigger=CronTrigger(hour=9, minute=0, timezone="Europe/Moscow"),
         kwargs={"bot": bot, "group_id": group_id},
         id="daily_digest",
         replace_existing=True,
