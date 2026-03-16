@@ -9,8 +9,8 @@ from aiogram.filters import Command
 
 from handlers.admin_request import IsAdmin
 from database.engine import AsyncSessionFactory
-from database.crud import get_approved_requests_for_month, get_pending_requests
-from database.models import User
+from database.crud import get_approved_requests_for_month, get_pending_requests, get_user_by_tg_id
+from database.models import User, UserRole
 from keyboards.menus import admin_main_menu
 from keyboards.request_kb import admin_request_keyboard
 from sqlalchemy import select
@@ -132,7 +132,65 @@ async def cmd_manage_employees(message: Message):
         )
 
     await message.answer(
-        f"👥 <b>Сотрудники ({len(users)}):</b>\n\n" + "\n\n".join(lines),
+        f"👥 <b>Сотрудники ({len(users)}):</b>\n\n" + "\n\n".join(lines) +
+        "\n\n💡 Чтобы назначить администратора:\n<code>/make_admin &lt;tg_id&gt;</code>\n"
+        "Чтобы снять права:\n<code>/remove_admin &lt;tg_id&gt;</code>",
         parse_mode="HTML",
         reply_markup=admin_main_menu(),
+    )
+
+
+# ─── /make_admin — назначить администратора ───────────────────────────────────
+@router.message(Command("make_admin"))
+async def cmd_make_admin(message: Message):
+    args = message.text.split()
+    if len(args) != 2 or not args[1].isdigit():
+        await message.answer("Использование: <code>/make_admin &lt;tg_id&gt;</code>", parse_mode="HTML")
+        return
+
+    tg_id = int(args[1])
+    async with AsyncSessionFactory() as session:
+        user = await get_user_by_tg_id(session, tg_id)
+        if not user:
+            await message.answer(f"❌ Пользователь с ID <code>{tg_id}</code> не найден.\nОн должен сначала написать боту /start.", parse_mode="HTML")
+            return
+        if user.role == UserRole.admin:
+            await message.answer(f"ℹ️ <b>{user.full_name}</b> уже является администратором.", parse_mode="HTML")
+            return
+        user.role = UserRole.admin
+        await session.commit()
+
+    await message.answer(
+        f"✅ <b>{user.full_name}</b> назначен администратором.",
+        parse_mode="HTML",
+    )
+
+
+# ─── /remove_admin — снять права администратора ───────────────────────────────
+@router.message(Command("remove_admin"))
+async def cmd_remove_admin(message: Message):
+    args = message.text.split()
+    if len(args) != 2 or not args[1].isdigit():
+        await message.answer("Использование: <code>/remove_admin &lt;tg_id&gt;</code>", parse_mode="HTML")
+        return
+
+    tg_id = int(args[1])
+    if tg_id == message.from_user.id:
+        await message.answer("❌ Нельзя снять права у самого себя.", parse_mode="HTML")
+        return
+
+    async with AsyncSessionFactory() as session:
+        user = await get_user_by_tg_id(session, tg_id)
+        if not user:
+            await message.answer(f"❌ Пользователь с ID <code>{tg_id}</code> не найден.", parse_mode="HTML")
+            return
+        if user.role != UserRole.admin:
+            await message.answer(f"ℹ️ <b>{user.full_name}</b> не является администратором.", parse_mode="HTML")
+            return
+        user.role = UserRole.user
+        await session.commit()
+
+    await message.answer(
+        f"✅ Права администратора у <b>{user.full_name}</b> сняты.",
+        parse_mode="HTML",
     )
