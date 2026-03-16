@@ -1,0 +1,36 @@
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+
+
+def user_main_menu() -> ReplyKeyboardMarkup:
+    """Главное меню для обычного пользователя."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📝 Подать заявку")],
+            [KeyboardButton(text="📋 Мои заявки")],
+            [KeyboardButton(text="💰 Мой баланс")],
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Выберите действие..."
+    )
+
+
+def admin_main_menu() -> ReplyKeyboardMarkup:
+    """Главное меню для администратора."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📬 Список новых заявок")],
+            [KeyboardButton(text="👥 Управление сотрудниками")],
+            [KeyboardButton(text="📝 Подать заявку")],
+            [KeyboardButton(text="💰 Мой баланс")],
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Выберите действие..."
+    )
+
+
+def back_keyboard() -> ReplyKeyboardMarkup:
+    """Кнопка возврата в меню."""
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="🔙 Назад")]],
+        resize_keyboard=True
+    )
