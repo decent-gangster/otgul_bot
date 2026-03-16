@@ -1,6 +1,8 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, and_, func
+from sqlalchemy.orm import selectinload
 from database.models import User, TimeOffRequest, UserRole
+from datetime import date
 
 
 # ─── Пользователи ───────────────────────────────────────────────────────────
@@ -64,3 +66,73 @@ async def update_request_status(session: AsyncSession, request_id: int, status: 
         if admin_comment is not None:
             req.admin_comment = admin_comment
         await session.commit()
+
+
+async def get_absent_today(session: AsyncSession) -> list[tuple[TimeOffRequest, User]]:
+    """Возвращает одобренные заявки, покрывающие сегодняшний день."""
+    today = date.today()
+    result = await session.execute(
+        select(TimeOffRequest, User)
+        .join(User, TimeOffRequest.user_id == User.id)
+        .where(
+            and_(
+                TimeOffRequest.status == "approved",
+                TimeOffRequest.start_date <= today,
+                TimeOffRequest.end_date >= today,
+            )
+        )
+    )
+    return result.all()
+
+
+async def get_user_month_days(session: AsyncSession, user_id: int, year: int, month: int) -> int:
+    """Считает суммарное количество дней отгулов пользователя за указанный месяц."""
+    month_start = date(year, month, 1)
+    # последний день месяца
+    import calendar as cal
+    last_day = cal.monthrange(year, month)[1]
+    month_end = date(year, month, last_day)
+
+    result = await session.execute(
+        select(TimeOffRequest).where(
+            and_(
+                TimeOffRequest.user_id == user_id,
+                TimeOffRequest.status == "approved",
+                TimeOffRequest.type == "отгул",
+                TimeOffRequest.start_date <= month_end,
+                TimeOffRequest.end_date >= month_start,
+            )
+        )
+    )
+    requests = result.scalars().all()
+
+    total = 0
+    for req in requests:
+        # пересечение периода заявки с текущим месяцем
+        effective_start = max(req.start_date, month_start)
+        effective_end = min(req.end_date, month_end)
+        total += (effective_end - effective_start).days + 1
+    return total
+
+
+async def get_approved_requests_for_month(session: AsyncSession, year: int, month: int) -> list[tuple[TimeOffRequest, User]]:
+    """Все одобренные заявки, чья дата начала попадает в указанный месяц."""
+    month_start = date(year, month, 1)
+    import calendar as cal
+    last_day = cal.monthrange(year, month)[1]
+    month_end = date(year, month, last_day)
+
+    result = await session.execute(
+        select(TimeOffRequest, User)
+        .join(User, TimeOffRequest.user_id == User.id)
+        .where(
+            and_(
+                TimeOffRequest.status == "approved",
+                TimeOffRequest.start_date >= month_start,
+                TimeOffRequest.start_date <= month_end,
+            )
+        )
+        .order_by(TimeOffRequest.start_date)
+    )
+    return result.all()
+        
