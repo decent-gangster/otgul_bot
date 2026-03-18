@@ -12,24 +12,29 @@ class RequestActionCallback(CallbackData, prefix="req_action"):
 
 
 class TimeCallback(CallbackData, prefix="time_pick"):
-    value: str  # "10:00"
+    value: str  # "0800" — без двоеточия, оно запрещено в CallbackData
 
 
+# Рабочий день 08:00–17:30, шаг 30 мин. Формат "HHMM" (без двоеточия)
 TIME_SLOTS = [
-    "08:00", "08:30", "09:00", "09:30",
-    "10:00", "10:30", "11:00", "11:30",
-    "12:00", "12:30", "13:00", "13:30",
-    "14:00", "14:30", "15:00", "15:30",
-    "16:00", "16:30", "17:00", "17:30",
-    "18:00",
+    "0800", "0830", "0900", "0930",
+    "1000", "1030", "1100", "1130",
+    "1200", "1230", "1300", "1330",
+    "1400", "1430", "1500", "1530",
+    "1600", "1630", "1700", "1730",
 ]
 
 
+def fmt_time(raw: str) -> str:
+    """'0800' → '08:00'"""
+    return f"{raw[:2]}:{raw[2:]}"
+
+
 def time_keyboard(after: str = None) -> InlineKeyboardMarkup:
-    """Клавиатура выбора времени. after — минимальное время (не включительно)."""
+    """Клавиатура выбора времени. after — 'HHMM', показываем только слоты позже него."""
     slots = [t for t in TIME_SLOTS if after is None or t > after]
     buttons = [
-        InlineKeyboardButton(text=t, callback_data=TimeCallback(value=t).pack())
+        InlineKeyboardButton(text=fmt_time(t), callback_data=TimeCallback(value=t).pack())
         for t in slots
     ]
     rows = [buttons[i:i + 4] for i in range(0, len(buttons), 4)]

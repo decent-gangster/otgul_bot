@@ -8,7 +8,7 @@ from datetime import date
 from states.request_states import RequestForm
 from keyboards.calendar import build_calendar, CalendarCallback
 from keyboards.request_kb import (
-    request_type_keyboard, hours_or_days_keyboard, time_keyboard,
+    request_type_keyboard, hours_or_days_keyboard, time_keyboard, fmt_time,
     confirm_keyboard, RequestTypeCallback, TimeCallback, admin_request_keyboard
 )
 from keyboards.menus import user_main_menu
@@ -105,14 +105,15 @@ async def choose_by_hours(call: CallbackQuery, state: FSMContext):
 # ─── Шаг 3б: Выбор времени начала ────────────────────────────────────────────
 @router.callback_query(TimeCallback.filter(), RequestForm.choosing_time_from)
 async def choose_time_from(call: CallbackQuery, callback_data: TimeCallback, state: FSMContext):
-    time_from = callback_data.value
+    raw_from = callback_data.value          # "0800"
+    time_from = fmt_time(raw_from)          # "08:00"
     logger.info("📝 шаг 3б: время начала=%s | %s", time_from, _u(call))
-    await state.update_data(time_from=time_from)
+    await state.update_data(time_from=time_from, _time_from_raw=raw_from)
     await state.set_state(RequestForm.choosing_time_to)
     await call.message.edit_text(
         f"✅ Начало: <b>{time_from}</b>\n\n"
         f"🕕 <b>Выберите время окончания:</b>",
-        reply_markup=time_keyboard(after=time_from),
+        reply_markup=time_keyboard(after=raw_from),
         parse_mode="HTML",
     )
     await call.answer()
@@ -121,9 +122,10 @@ async def choose_time_from(call: CallbackQuery, callback_data: TimeCallback, sta
 # ─── Шаг 3в: Выбор времени окончания ─────────────────────────────────────────
 @router.callback_query(TimeCallback.filter(), RequestForm.choosing_time_to)
 async def choose_time_to(call: CallbackQuery, callback_data: TimeCallback, state: FSMContext):
-    time_to = callback_data.value
+    raw_to = callback_data.value            # "1400"
+    time_to = fmt_time(raw_to)              # "14:00"
     data = await state.get_data()
-    time_from = data["time_from"]
+    time_from = data["time_from"]           # "08:00"
 
     from_h, from_m = map(int, time_from.split(":"))
     to_h, to_m = map(int, time_to.split(":"))
