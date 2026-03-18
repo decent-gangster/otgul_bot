@@ -3,13 +3,15 @@ import logging
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
-from datetime import date
+from datetime import date, datetime
+import pytz
 
 from states.request_states import RequestForm
 from keyboards.calendar import build_calendar, CalendarCallback
 from keyboards.request_kb import (
     request_type_keyboard, hours_or_days_keyboard, time_keyboard, fmt_time,
-    confirm_keyboard, RequestTypeCallback, TimeCallback, admin_request_keyboard
+    confirm_keyboard, RequestTypeCallback, TimeCallback, admin_request_keyboard,
+    TIME_SLOTS,
 )
 from keyboards.menus import user_main_menu
 from database.engine import AsyncSessionFactory
@@ -18,6 +20,14 @@ from database.models import RequestType
 
 logger = logging.getLogger(__name__)
 router = Router()
+
+BISHKEK_TZ = pytz.timezone("Asia/Bishkek")
+
+
+def _now_raw() -> str:
+    """Текущее время в Asia/Bishkek в формате 'HHMM'."""
+    now = datetime.now(BISHKEK_TZ)
+    return f"{now.hour:02d}{now.minute:02d}"
 
 REQUEST_TYPE_LABELS = {
     "отгул": "🗓 Отгул (свой счёт)",
@@ -91,12 +101,13 @@ async def choose_full_day(call: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "otgul_by_hours", RequestForm.choosing_hours_or_days)
 async def choose_by_hours(call: CallbackQuery, state: FSMContext):
-    logger.info("📝 шаг 3а: отгул по часам | %s", _u(call))
-    await state.set_state(RequestForm.choosing_time_from)
+    logger.info("📝 шаг 3а: отгул по часам — выбор даты | %s", _u(call))
+    await state.update_data(otgul_by_hours=True)
+    await state.set_state(RequestForm.choosing_start_date)
     await call.message.edit_text(
         "✅ Тип: <b>⏱ Отгул по часам</b>\n\n"
-        "🕐 <b>Выберите время начала:</b>",
-        reply_markup=time_keyboard(),
+        "📅 <b>Выберите дату отгула:</b>",
+        reply_markup=build_calendar(),
         parse_mode="HTML",
     )
     await call.answer()
@@ -108,12 +119,19 @@ async def choose_time_from(call: CallbackQuery, callback_data: TimeCallback, sta
     raw_from = callback_data.value          # "0800"
     time_from = fmt_time(raw_from)          # "08:00"
     logger.info("📝 шаг 3б: время начала=%s | %s", time_from, _u(call))
-    await state.update_data(time_from=time_from, _time_from_raw=raw_from)
+    data = await state.get_data()
+    await state.update_data(time_from=time_from)
+
+    # Для конечного времени: после начала И не в прошлом (если сегодня)
+    start_date = date.fromisoformat(data["start_date"])
+    min_raw = _now_raw() if start_date == date.today() else None
+    after = max(raw_from, min_raw) if min_raw else raw_from
+
     await state.set_state(RequestForm.choosing_time_to)
     await call.message.edit_text(
         f"✅ Начало: <b>{time_from}</b>\n\n"
         f"🕕 <b>Выберите время окончания:</b>",
-        reply_markup=time_keyboard(after=raw_from),
+        reply_markup=time_keyboard(after=after),
         parse_mode="HTML",
     )
     await call.answer()
@@ -133,11 +151,10 @@ async def choose_time_to(call: CallbackQuery, callback_data: TimeCallback, state
 
     logger.info("📝 шаг 3в: время конца=%s, часов=%.1f | %s", time_to, hours, _u(call))
     await state.update_data(time_to=time_to, hours=hours)
-    await state.set_state(RequestForm.choosing_start_date)
+    await state.set_state(RequestForm.entering_reason)
     await call.message.edit_text(
         f"✅ Время: <b>{time_from} — {time_to} ({hours:.1f} ч.)</b>\n\n"
-        f"📅 <b>Выберите дату отгула:</b>",
-        reply_markup=build_calendar(),
+        f"✏️ <b>Укажите причину</b> (или напишите «—»):",
         parse_mode="HTML",
     )
     await call.answer()
@@ -154,15 +171,21 @@ async def choose_start_date(call: CallbackQuery, callback_data: CalendarCallback
 
     data = await state.get_data()
     logger.info("📝 шаг 4: дата начала=%s | %s", chosen, _u(call))
-    await state.update_data(start_date=chosen.isoformat())
+    await state.update_data(start_date=chosen.isoformat(), end_date=chosen.isoformat())
 
-    # Если отгул по часам — дата конца = дата начала, пропускаем выбор
-    if data.get("hours"):
-        await state.update_data(end_date=chosen.isoformat())
-        await state.set_state(RequestForm.entering_reason)
+    if data.get("otgul_by_hours"):
+        # Для отгула по часам — показываем выбор времени (фильтруем если сегодня)
+        min_raw = _now_raw() if chosen == date.today() else None
+        available = [t for t in TIME_SLOTS if min_raw is None or t > min_raw]
+        if not available:
+            logger.warning("⚠ Сегодня рабочее время закончилось | %s", _u(call))
+            await call.answer("⚠️ На сегодня рабочее время уже закончилось!", show_alert=True)
+            return
+        await state.set_state(RequestForm.choosing_time_from)
         await call.message.edit_text(
             f"✅ Дата: <b>{chosen.strftime('%d.%m.%Y')}</b>\n\n"
-            f"✏️ <b>Укажите причину</b> (или напишите «—»):",
+            f"🕐 <b>Выберите время начала:</b>",
+            reply_markup=time_keyboard(after=min_raw),
             parse_mode="HTML",
         )
     else:
