@@ -8,8 +8,8 @@ from datetime import date
 from states.request_states import RequestForm
 from keyboards.calendar import build_calendar, CalendarCallback
 from keyboards.request_kb import (
-    request_type_keyboard, hours_or_days_keyboard,
-    confirm_keyboard, RequestTypeCallback, admin_request_keyboard
+    request_type_keyboard, hours_or_days_keyboard, time_keyboard,
+    confirm_keyboard, RequestTypeCallback, TimeCallback, admin_request_keyboard
 )
 from keyboards.menus import user_main_menu
 from database.engine import AsyncSessionFactory
@@ -92,35 +92,53 @@ async def choose_full_day(call: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "otgul_by_hours", RequestForm.choosing_hours_or_days)
 async def choose_by_hours(call: CallbackQuery, state: FSMContext):
     logger.info("📝 шаг 3а: отгул по часам | %s", _u(call))
-    await state.set_state(RequestForm.choosing_hours)
+    await state.set_state(RequestForm.choosing_time_from)
     await call.message.edit_text(
         "✅ Тип: <b>⏱ Отгул по часам</b>\n\n"
-        "Введите количество часов (от 1 до 8):",
+        "🕐 <b>Выберите время начала:</b>",
+        reply_markup=time_keyboard(),
         parse_mode="HTML",
     )
     await call.answer()
 
 
-# ─── Шаг 3б: Ввод часов ──────────────────────────────────────────────────────
-@router.message(RequestForm.choosing_hours)
-async def enter_hours(message: Message, state: FSMContext):
-    text = message.text.strip().replace(",", ".")
-    try:
-        hours = float(text)
-        if not (0.5 <= hours <= 8):
-            raise ValueError
-    except ValueError:
-        await message.answer("⚠️ Введите число от 0.5 до 8 (например: 2, 3.5, 4)")
-        return
+# ─── Шаг 3б: Выбор времени начала ────────────────────────────────────────────
+@router.callback_query(TimeCallback.filter(), RequestForm.choosing_time_from)
+async def choose_time_from(call: CallbackQuery, callback_data: TimeCallback, state: FSMContext):
+    time_from = callback_data.value
+    logger.info("📝 шаг 3б: время начала=%s | %s", time_from, _u(call))
+    await state.update_data(time_from=time_from)
+    await state.set_state(RequestForm.choosing_time_to)
+    await call.message.edit_text(
+        f"✅ Начало: <b>{time_from}</b>\n\n"
+        f"🕕 <b>Выберите время окончания:</b>",
+        reply_markup=time_keyboard(after=time_from),
+        parse_mode="HTML",
+    )
+    await call.answer()
 
-    logger.info("📝 шаг 3б: часов=%s | %s", hours, _u(message))
-    await state.update_data(hours=hours)
+
+# ─── Шаг 3в: Выбор времени окончания ─────────────────────────────────────────
+@router.callback_query(TimeCallback.filter(), RequestForm.choosing_time_to)
+async def choose_time_to(call: CallbackQuery, callback_data: TimeCallback, state: FSMContext):
+    time_to = callback_data.value
+    data = await state.get_data()
+    time_from = data["time_from"]
+
+    from_h, from_m = map(int, time_from.split(":"))
+    to_h, to_m = map(int, time_to.split(":"))
+    hours = (to_h * 60 + to_m - from_h * 60 - from_m) / 60
+
+    logger.info("📝 шаг 3в: время конца=%s, часов=%.1f | %s", time_to, hours, _u(call))
+    await state.update_data(time_to=time_to, hours=hours)
     await state.set_state(RequestForm.choosing_start_date)
-    await message.answer(
-        f"✅ Часов: <b>{hours:.1f} ч.</b>\n\n📅 <b>Выберите дату отгула</b>:",
+    await call.message.edit_text(
+        f"✅ Время: <b>{time_from} — {time_to} ({hours:.1f} ч.)</b>\n\n"
+        f"📅 <b>Выберите дату отгула:</b>",
         reply_markup=build_calendar(),
         parse_mode="HTML",
     )
+    await call.answer()
 
 
 # ─── Шаг 4: Дата начала ──────────────────────────────────────────────────────
@@ -222,6 +240,8 @@ async def enter_reason(message: Message, state: FSMContext):
     )
     if not data.get("hours"):
         summary += f"📅 Конец: <b>{end.strftime('%d.%m.%Y')}</b>\n"
+    if data.get("time_from") and data.get("time_to"):
+        summary += f"⏰ Время: <b>{data['time_from']} — {data['time_to']}</b>\n"
     summary += (
         f"🔢 Длительность: <b>{duration}</b>\n"
         f"💬 Причина: <b>{reason}</b>\n\n"
@@ -246,6 +266,8 @@ async def confirm_request(call: CallbackQuery, state: FSMContext, bot: Bot, admi
             end_date=date.fromisoformat(data["end_date"]),
             type=RequestType(data["request_type"]),
             hours=data.get("hours"),
+            time_from=data.get("time_from"),
+            time_to=data.get("time_to"),
             reason=data["reason"],
         )
 

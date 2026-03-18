@@ -18,11 +18,20 @@ async def init_db():
     """Создаёт все таблицы при первом запуске и применяет миграции."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        # Миграция: добавить колонку hours если её нет (добавлена в v2)
+        # Миграция v2: колонка hours
         try:
             await conn.execute(text("ALTER TABLE time_off_requests ADD COLUMN hours REAL"))
         except Exception:
-            pass  # колонка уже существует
+            pass
+        # Миграция v3: колонки time_from и time_to для отгула по часам
+        try:
+            await conn.execute(text("ALTER TABLE time_off_requests ADD COLUMN time_from VARCHAR(5)"))
+        except Exception:
+            pass
+        try:
+            await conn.execute(text("ALTER TABLE time_off_requests ADD COLUMN time_to VARCHAR(5)"))
+        except Exception:
+            pass
 
 
 async def get_session() -> AsyncSession:

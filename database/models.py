@@ -47,7 +47,9 @@ class TimeOffRequest(Base):
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
     type = Column(Enum(RequestType), nullable=False)
-    hours = Column(Float, nullable=True)  # кол-во часов, если отгул по часам (иначе None)
+    hours = Column(Float, nullable=True)       # кол-во часов, если отгул по часам (иначе None)
+    time_from = Column(String(5), nullable=True)  # "10:00" — начало отгула по часам
+    time_to = Column(String(5), nullable=True)    # "14:00" — конец отгула по часам
     reason = Column(Text, nullable=True)
     status = Column(Enum(RequestStatus), default=RequestStatus.pending, nullable=False)
     admin_comment = Column(Text, nullable=True)
