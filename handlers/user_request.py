@@ -7,7 +7,10 @@ from datetime import date
 
 from states.request_states import RequestForm
 from keyboards.calendar import build_calendar, CalendarCallback
-from keyboards.request_kb import request_type_keyboard, confirm_keyboard, RequestTypeCallback, admin_request_keyboard
+from keyboards.request_kb import (
+    request_type_keyboard, hours_or_days_keyboard,
+    confirm_keyboard, RequestTypeCallback, admin_request_keyboard
+)
 from keyboards.menus import user_main_menu
 from database.engine import AsyncSessionFactory
 from database.crud import get_or_create_user, create_request
@@ -28,38 +31,128 @@ def _u(event) -> str:
     return f"[id={u.id} name={u.full_name!r}]"
 
 
-# ─── Шаг 1 ───────────────────────────────────────────────────────────────────
+def format_duration(req_data: dict) -> str:
+    """Возвращает строку длительности: '2 д.' или '4 ч.'"""
+    if req_data.get("hours"):
+        return f"{req_data['hours']:.0f} ч."
+    start = date.fromisoformat(req_data["start_date"])
+    end = date.fromisoformat(req_data["end_date"])
+    return f"{(end - start).days + 1} д."
+
+
+# ─── Шаг 1: Подать заявку ────────────────────────────────────────────────────
 @router.message(F.text == "📝 Подать заявку")
 async def start_request(message: Message, state: FSMContext):
-    logger.info("📝 Подать заявку | шаг 1/6: выбор даты начала | %s", _u(message))
+    logger.info("📝 Подать заявку | шаг 1: выбор типа | %s", _u(message))
     await state.clear()
+    await state.set_state(RequestForm.choosing_type)
+    await message.answer("📋 <b>Выберите тип заявки:</b>", reply_markup=request_type_keyboard(), parse_mode="HTML")
+
+
+# ─── Шаг 2: Выбор типа ───────────────────────────────────────────────────────
+@router.callback_query(RequestTypeCallback.filter(), RequestForm.choosing_type)
+async def choose_type(call: CallbackQuery, callback_data: RequestTypeCallback, state: FSMContext):
+    req_type = callback_data.type_value
+    logger.info("📝 шаг 2: тип=%s | %s", req_type, _u(call))
+    await state.update_data(request_type=req_type, hours=None)
+
+    if req_type == "отгул":
+        await state.set_state(RequestForm.choosing_hours_or_days)
+        await call.message.edit_text(
+            f"✅ Тип: <b>{REQUEST_TYPE_LABELS[req_type]}</b>\n\n"
+            f"⏱ <b>Как брать отгул?</b>",
+            reply_markup=hours_or_days_keyboard(),
+            parse_mode="HTML",
+        )
+    else:
+        await state.set_state(RequestForm.choosing_start_date)
+        await call.message.edit_text(
+            f"✅ Тип: <b>{REQUEST_TYPE_LABELS[req_type]}</b>\n\n"
+            f"📅 <b>Выберите дату начала</b>:",
+            reply_markup=build_calendar(),
+            parse_mode="HTML",
+        )
+    await call.answer()
+
+
+# ─── Шаг 3а: Полный день или по часам (только для отгула) ────────────────────
+@router.callback_query(F.data == "otgul_full_day", RequestForm.choosing_hours_or_days)
+async def choose_full_day(call: CallbackQuery, state: FSMContext):
+    logger.info("📝 шаг 3а: отгул полный день | %s", _u(call))
+    await state.update_data(hours=None)
+    await state.set_state(RequestForm.choosing_start_date)
+    await call.message.edit_text(
+        "✅ Тип: <b>🗓 Отгул — полный день</b>\n\n📅 <b>Выберите дату начала</b>:",
+        reply_markup=build_calendar(),
+        parse_mode="HTML",
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data == "otgul_by_hours", RequestForm.choosing_hours_or_days)
+async def choose_by_hours(call: CallbackQuery, state: FSMContext):
+    logger.info("📝 шаг 3а: отгул по часам | %s", _u(call))
+    await state.set_state(RequestForm.choosing_hours)
+    await call.message.edit_text(
+        "✅ Тип: <b>⏱ Отгул по часам</b>\n\n"
+        "Введите количество часов (от 1 до 8):",
+        parse_mode="HTML",
+    )
+    await call.answer()
+
+
+# ─── Шаг 3б: Ввод часов ──────────────────────────────────────────────────────
+@router.message(RequestForm.choosing_hours)
+async def enter_hours(message: Message, state: FSMContext):
+    text = message.text.strip().replace(",", ".")
+    try:
+        hours = float(text)
+        if not (0.5 <= hours <= 8):
+            raise ValueError
+    except ValueError:
+        await message.answer("⚠️ Введите число от 0.5 до 8 (например: 2, 3.5, 4)")
+        return
+
+    logger.info("📝 шаг 3б: часов=%s | %s", hours, _u(message))
+    await state.update_data(hours=hours)
     await state.set_state(RequestForm.choosing_start_date)
     await message.answer(
-        "📅 <b>Выберите дату начала</b>:",
+        f"✅ Часов: <b>{hours:.1f} ч.</b>\n\n📅 <b>Выберите дату отгула</b>:",
         reply_markup=build_calendar(),
         parse_mode="HTML",
     )
 
 
-# ─── Шаг 2: дата начала ───────────────────────────────────────────────────────
+# ─── Шаг 4: Дата начала ──────────────────────────────────────────────────────
 @router.callback_query(CalendarCallback.filter(F.action == "day"), RequestForm.choosing_start_date)
 async def choose_start_date(call: CallbackQuery, callback_data: CalendarCallback, state: FSMContext):
     chosen = date(callback_data.year, callback_data.month, callback_data.day)
-
     if chosen < date.today():
         logger.warning("⚠ Попытка выбрать прошедшую дату %s | %s", chosen, _u(call))
         await call.answer("⚠️ Нельзя выбрать прошедшую дату!", show_alert=True)
         return
 
-    logger.info("📝 шаг 2/6: дата начала=%s | %s", chosen, _u(call))
+    data = await state.get_data()
+    logger.info("📝 шаг 4: дата начала=%s | %s", chosen, _u(call))
     await state.update_data(start_date=chosen.isoformat())
-    await state.set_state(RequestForm.choosing_end_date)
-    await call.message.edit_text(
-        f"✅ Дата начала: <b>{chosen.strftime('%d.%m.%Y')}</b>\n\n"
-        f"📅 <b>Выберите дату окончания</b>:",
-        reply_markup=build_calendar(chosen.year, chosen.month),
-        parse_mode="HTML",
-    )
+
+    # Если отгул по часам — дата конца = дата начала, пропускаем выбор
+    if data.get("hours"):
+        await state.update_data(end_date=chosen.isoformat())
+        await state.set_state(RequestForm.entering_reason)
+        await call.message.edit_text(
+            f"✅ Дата: <b>{chosen.strftime('%d.%m.%Y')}</b>\n\n"
+            f"✏️ <b>Укажите причину</b> (или напишите «—»):",
+            parse_mode="HTML",
+        )
+    else:
+        await state.set_state(RequestForm.choosing_end_date)
+        await call.message.edit_text(
+            f"✅ Дата начала: <b>{chosen.strftime('%d.%m.%Y')}</b>\n\n"
+            f"📅 <b>Выберите дату окончания</b>:",
+            reply_markup=build_calendar(chosen.year, chosen.month),
+            parse_mode="HTML",
+        )
     await call.answer()
 
 
@@ -73,7 +166,6 @@ async def choose_start_date(call: CallbackQuery, callback_data: CalendarCallback
     RequestForm.choosing_end_date,
 )
 async def navigate_calendar(call: CallbackQuery, callback_data: CalendarCallback):
-    logger.debug("📅 навигация по календарю: %s/%s | %s", callback_data.month, callback_data.year, _u(call))
     await call.message.edit_reply_markup(
         reply_markup=build_calendar(callback_data.year, callback_data.month)
     )
@@ -85,7 +177,7 @@ async def ignore_calendar(call: CallbackQuery):
     await call.answer()
 
 
-# ─── Шаг 3: дата окончания ───────────────────────────────────────────────────
+# ─── Шаг 5: Дата окончания ───────────────────────────────────────────────────
 @router.callback_query(CalendarCallback.filter(F.action == "day"), RequestForm.choosing_end_date)
 async def choose_end_date(call: CallbackQuery, callback_data: CalendarCallback, state: FSMContext):
     data = await state.get_data()
@@ -93,56 +185,45 @@ async def choose_end_date(call: CallbackQuery, callback_data: CalendarCallback, 
     end = date(callback_data.year, callback_data.month, callback_data.day)
 
     if end < start:
-        logger.warning("⚠ Дата окончания %s раньше начала %s | %s", end, start, _u(call))
+        logger.warning("⚠ Дата конца %s < начала %s | %s", end, start, _u(call))
         await call.answer("⚠️ Дата окончания не может быть раньше даты начала!", show_alert=True)
         return
 
     days = (end - start).days + 1
-    logger.info("📝 шаг 3/6: дата конца=%s (итого %d д.) | %s", end, days, _u(call))
+    logger.info("📝 шаг 5: дата конца=%s (%d д.) | %s", end, days, _u(call))
     await state.update_data(end_date=end.isoformat())
-    await state.set_state(RequestForm.choosing_type)
+    await state.set_state(RequestForm.entering_reason)
     await call.message.edit_text(
         f"✅ Дата начала: <b>{start.strftime('%d.%m.%Y')}</b>\n"
         f"✅ Дата окончания: <b>{end.strftime('%d.%m.%Y')}</b>\n\n"
-        f"📋 <b>Выберите тип заявки:</b>",
-        reply_markup=request_type_keyboard(),
+        f"✏️ <b>Укажите причину</b> (или напишите «—»):",
         parse_mode="HTML",
     )
     await call.answer()
 
 
-# ─── Шаг 4: тип заявки ───────────────────────────────────────────────────────
-@router.callback_query(RequestTypeCallback.filter(), RequestForm.choosing_type)
-async def choose_type(call: CallbackQuery, callback_data: RequestTypeCallback, state: FSMContext):
-    logger.info("📝 шаг 4/6: тип=%s | %s", callback_data.type_value, _u(call))
-    await state.update_data(request_type=callback_data.type_value)
-    await state.set_state(RequestForm.entering_reason)
-    await call.message.edit_text(
-        f"✅ Тип: <b>{REQUEST_TYPE_LABELS[callback_data.type_value]}</b>\n\n"
-        f"✏️ <b>Укажите причину</b> (или напишите «—» если не хотите):",
-        parse_mode="HTML",
-    )
-    await call.answer()
-
-
-# ─── Шаг 5: причина ──────────────────────────────────────────────────────────
+# ─── Шаг 6: Причина ──────────────────────────────────────────────────────────
 @router.message(RequestForm.entering_reason)
 async def enter_reason(message: Message, state: FSMContext):
     reason = message.text.strip()
-    logger.info("📝 шаг 5/6: причина=%r | %s", reason[:50], _u(message))
+    logger.info("📝 шаг 6: причина=%r | %s", reason[:50], _u(message))
     await state.update_data(reason=reason)
     data = await state.get_data()
 
     start = date.fromisoformat(data["start_date"])
     end = date.fromisoformat(data["end_date"])
-    days = (end - start).days + 1
+    duration = format_duration(data)
+    type_label = REQUEST_TYPE_LABELS[data["request_type"]]
 
     summary = (
         f"📄 <b>Итог вашей заявки:</b>\n\n"
-        f"📋 Тип: <b>{REQUEST_TYPE_LABELS[data['request_type']]}</b>\n"
+        f"📋 Тип: <b>{type_label}</b>\n"
         f"📅 Начало: <b>{start.strftime('%d.%m.%Y')}</b>\n"
-        f"📅 Конец: <b>{end.strftime('%d.%m.%Y')}</b>\n"
-        f"🔢 Дней: <b>{days}</b>\n"
+    )
+    if not data.get("hours"):
+        summary += f"📅 Конец: <b>{end.strftime('%d.%m.%Y')}</b>\n"
+    summary += (
+        f"🔢 Длительность: <b>{duration}</b>\n"
         f"💬 Причина: <b>{reason}</b>\n\n"
         f"Всё верно?"
     )
@@ -150,7 +231,7 @@ async def enter_reason(message: Message, state: FSMContext):
     await message.answer(summary, reply_markup=confirm_keyboard(), parse_mode="HTML")
 
 
-# ─── Шаг 6: подтверждение ────────────────────────────────────────────────────
+# ─── Шаг 7: Подтверждение ────────────────────────────────────────────────────
 @router.callback_query(F.data == "confirm_request", RequestForm.confirming)
 async def confirm_request(call: CallbackQuery, state: FSMContext, bot: Bot, admin_ids: list[int]):
     data = await state.get_data()
@@ -164,16 +245,18 @@ async def confirm_request(call: CallbackQuery, state: FSMContext, bot: Bot, admi
             start_date=date.fromisoformat(data["start_date"]),
             end_date=date.fromisoformat(data["end_date"]),
             type=RequestType(data["request_type"]),
+            hours=data.get("hours"),
             reason=data["reason"],
         )
 
     start = date.fromisoformat(data["start_date"])
     end = date.fromisoformat(data["end_date"])
-    days = (end - start).days + 1
+    duration = format_duration(data)
+    type_label = REQUEST_TYPE_LABELS[data["request_type"]]
 
     logger.info(
-        "✅ шаг 6/6: заявка #%d создана | тип=%s | %s — %s (%d д.) | %s",
-        req.id, data["request_type"], start, end, days, _u(call)
+        "✅ Заявка #%d создана | тип=%s | %s — %s | %s | %s",
+        req.id, data["request_type"], start, end, duration, _u(call)
     )
 
     await call.message.edit_text(
@@ -183,12 +266,18 @@ async def confirm_request(call: CallbackQuery, state: FSMContext, bot: Bot, admi
     )
     await call.message.answer("Главное меню:", reply_markup=user_main_menu())
 
+    # ── Уведомление администраторам ──────────────────────────────────────────
     admin_text = (
         f"📬 <b>Новая заявка #{req.id}</b>\n\n"
         f"👤 Сотрудник: <b>{call.from_user.full_name}</b> (ID: {call.from_user.id})\n"
-        f"📋 Тип: <b>{REQUEST_TYPE_LABELS[data['request_type']]}</b>\n"
-        f"📅 Период: <b>{start.strftime('%d.%m.%Y')} — {end.strftime('%d.%m.%Y')}</b>\n"
-        f"🔢 Дней: <b>{days}</b>\n"
+        f"📋 Тип: <b>{type_label}</b>\n"
+        f"📅 Дата: <b>{start.strftime('%d.%m.%Y')}"
+    )
+    if not data.get("hours"):
+        admin_text += f" — {end.strftime('%d.%m.%Y')}"
+    admin_text += (
+        f"</b>\n"
+        f"🔢 Длительность: <b>{duration}</b>\n"
         f"💬 Причина: <b>{data['reason']}</b>"
     )
     for admin_id in admin_ids:
@@ -204,7 +293,7 @@ async def confirm_request(call: CallbackQuery, state: FSMContext, bot: Bot, admi
 # ─── Отмена ──────────────────────────────────────────────────────────────────
 @router.callback_query(F.data == "cancel_request", RequestForm.confirming)
 async def cancel_request(call: CallbackQuery, state: FSMContext):
-    logger.info("❌ Заявка отменена пользователем на шаге подтверждения | %s", _u(call))
+    logger.info("❌ Заявка отменена | %s", _u(call))
     await state.clear()
     await call.message.edit_text("❌ Заявка отменена.")
     await call.message.answer("Главное меню:", reply_markup=user_main_menu())

@@ -9,6 +9,7 @@ from keyboards.menus import user_main_menu, admin_main_menu
 from database.engine import AsyncSessionFactory
 from database.crud import get_or_create_user, get_user_month_days, get_requests_by_user
 from database.models import UserRole, RequestStatus
+from utils.formatters import format_request_period, format_request_duration
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -101,11 +102,11 @@ async def cmd_my_requests(message: Message):
 
     lines = []
     for req in requests[:10]:
-        start = req.start_date.strftime("%d.%m.%Y")
-        end = req.end_date.strftime("%d.%m.%Y")
+        period = format_request_period(req)
+        duration = format_request_duration(req)
         status = STATUS_LABELS.get(req.status, req.status)
         lines.append(
-            f"<b>#{req.id}</b> | {req.type.value} | {start} — {end}\n"
+            f"<b>#{req.id}</b> | {req.type.value} | {period} ({duration})\n"
             f"   {status}"
         )
 

@@ -5,6 +5,7 @@ from aiogram import Bot
 
 from database.engine import AsyncSessionFactory
 from database.crud import get_absent_today
+from utils.formatters import format_request_period, format_request_duration
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +21,9 @@ async def send_daily_digest(bot: Bot, group_id: int) -> None:
         else:
             lines = []
             for req, user in rows:
-                end_str = req.end_date.strftime("%d.%m")
-                lines.append(f"• <b>{user.full_name}</b> — {req.type.value} (до {end_str})")
+                period = format_request_period(req)
+                duration = format_request_duration(req)
+                lines.append(f"• <b>{user.full_name}</b> — {req.type.value} ({period}, {duration})")
             absent_list = "\n".join(lines)
             text = (
                 f"☀️ <b>Доброе утро!</b>\n\n"

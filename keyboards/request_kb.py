@@ -29,6 +29,14 @@ def request_type_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
+def hours_or_days_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура выбора: полный день или отгул по часам."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📅 Полный день", callback_data="otgul_full_day")],
+        [InlineKeyboardButton(text="⏱ По часам", callback_data="otgul_by_hours")],
+    ])
+
+
 def confirm_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура подтверждения заявки."""
     return InlineKeyboardMarkup(inline_keyboard=[

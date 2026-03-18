@@ -12,6 +12,7 @@ from keyboards.menus import admin_main_menu
 from database.engine import AsyncSessionFactory
 from database.crud import update_request_status
 from database.models import TimeOffRequest, User, RequestStatus
+from utils.formatters import format_request_period, format_request_duration
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -68,8 +69,8 @@ async def approve_request(
         await update_request_status(session, request_id, status=RequestStatus.approved)
         logger.info("   заявка #%d → approved | сотрудник id=%d %r | %s", request_id, user.tg_id, user.full_name, _a(call))
 
-    start_str = req.start_date.strftime("%d.%m.%Y")
-    end_str = req.end_date.strftime("%d.%m.%Y")
+    period = format_request_period(req)
+    duration = format_request_duration(req)
     type_label = req.type.value
     admin_name = f"@{call.from_user.username}" if call.from_user.username else call.from_user.full_name
 
@@ -83,7 +84,8 @@ async def approve_request(
             user.tg_id,
             f"🎉 <b>Ваша заявка #{req.id} одобрена!</b>\n\n"
             f"📋 Тип: <b>{type_label}</b>\n"
-            f"📅 Период: <b>{start_str} — {end_str}</b>\n\n"
+            f"📅 Период: <b>{period}</b>\n"
+            f"🔢 Длительность: <b>{duration}</b>\n\n"
             f"Хорошего отдыха! 😊",
             parse_mode="HTML",
         )
@@ -96,7 +98,7 @@ async def approve_request(
             group_id,
             f"📢 <b>Информация об отсутствии</b>\n\n"
             f"Сотрудник <b>{user.full_name}</b> будет отсутствовать "
-            f"с <b>{start_str}</b> по <b>{end_str}</b> ({type_label}).",
+            f"<b>{period}</b> ({type_label}, {duration}).",
             parse_mode="HTML",
         )
         logger.info("   анонс отправлен в группу id=%d", group_id)
@@ -165,8 +167,8 @@ async def reject_request_save(message: Message, state: FSMContext, bot: Bot):
         )
         logger.info("   заявка #%d → rejected | сотрудник id=%d %r | %s", request_id, user.tg_id, user.full_name, _a(message))
 
-    start_str = req.start_date.strftime("%d.%m.%Y")
-    end_str = req.end_date.strftime("%d.%m.%Y")
+    period = format_request_period(req)
+    duration = format_request_duration(req)
 
     await message.answer(
         f"❌ Заявка <b>#{request_id}</b> отклонена.\n💬 Причина сохранена: <i>{comment}</i>",
@@ -192,7 +194,8 @@ async def reject_request_save(message: Message, state: FSMContext, bot: Bot):
             user.tg_id,
             f"😔 <b>Ваша заявка #{req.id} отклонена.</b>\n\n"
             f"📋 Тип: <b>{req.type.value}</b>\n"
-            f"📅 Период: <b>{start_str} — {end_str}</b>\n\n"
+            f"📅 Период: <b>{period}</b>\n"
+            f"🔢 Длительность: <b>{duration}</b>\n\n"
             f"💬 Комментарий администратора: <i>{comment}</i>",
             parse_mode="HTML",
         )

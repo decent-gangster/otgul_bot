@@ -13,6 +13,7 @@ from database.crud import get_approved_requests_for_month, get_pending_requests,
 from database.models import User, UserRole
 from keyboards.menus import admin_main_menu
 from keyboards.request_kb import admin_request_keyboard
+from utils.formatters import format_request_period, format_request_duration
 from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
@@ -55,12 +56,12 @@ async def cmd_report(message: Message):
     writer = csv.writer(output, delimiter=";", quoting=csv.QUOTE_ALL)
     writer.writerow([
         "№", "Сотрудник", "Telegram ID",
-        "Тип", "Дата начала", "Дата окончания", "Дней",
+        "Тип", "Дата начала", "Дата окончания", "Дней", "Часов",
         "Причина", "Комментарий администратора",
     ])
 
     for idx, (req, user) in enumerate(rows, start=1):
-        days = (req.end_date - req.start_date).days + 1
+        days = (req.end_date - req.start_date).days + 1 if not req.hours else "—"
         writer.writerow([
             idx,
             user.full_name,
@@ -69,6 +70,7 @@ async def cmd_report(message: Message):
             req.start_date.strftime("%d.%m.%Y"),
             req.end_date.strftime("%d.%m.%Y"),
             days,
+            f"{req.hours:.1f}" if req.hours else "—",
             req.reason or "—",
             req.admin_comment or "—",
         ])
@@ -110,13 +112,12 @@ async def cmd_pending_requests(message: Message):
     )
 
     for req, user in rows:
-        start = req.start_date.strftime("%d.%m.%Y")
-        end = req.end_date.strftime("%d.%m.%Y")
-        days = (req.end_date - req.start_date).days + 1
+        period = format_request_period(req)
+        duration = format_request_duration(req)
         text = (
             f"📋 <b>Заявка #{req.id}</b>\n"
             f"👤 {user.full_name}\n"
-            f"🗂 {req.type.value} | {start} — {end} ({days} д.)\n"
+            f"🗂 {req.type.value} | {period} ({duration})\n"
             f"💬 {req.reason or '—'}"
         )
         await message.answer(text, reply_markup=admin_request_keyboard(req.id), parse_mode="HTML")
