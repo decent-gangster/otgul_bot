@@ -323,8 +323,10 @@ async def confirm_request(call: CallbackQuery, state: FSMContext, bot: Bot, admi
     )
     if not data.get("hours"):
         admin_text += f" — {end.strftime('%d.%m.%Y')}"
+    admin_text += f"</b>\n"
+    if data.get("time_from") and data.get("time_to"):
+        admin_text += f"⏰ Время: <b>{data['time_from']} — {data['time_to']}</b>\n"
     admin_text += (
-        f"</b>\n"
         f"🔢 Длительность: <b>{duration}</b>\n"
         f"💬 Причина: <b>{data['reason']}</b>"
     )
