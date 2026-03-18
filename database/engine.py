@@ -1,3 +1,4 @@
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from database.models import Base
 
@@ -14,9 +15,14 @@ AsyncSessionFactory = async_sessionmaker(
 
 
 async def init_db():
-    """Создаёт все таблицы при первом запуске."""
+    """Создаёт все таблицы при первом запуске и применяет миграции."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Миграция: добавить колонку hours если её нет (добавлена в v2)
+        try:
+            await conn.execute(text("ALTER TABLE time_off_requests ADD COLUMN hours REAL"))
+        except Exception:
+            pass  # колонка уже существует
 
 
 async def get_session() -> AsyncSession:
