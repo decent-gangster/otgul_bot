@@ -6,7 +6,7 @@ from aiogram.fsm.context import FSMContext
 from datetime import date, datetime
 import pytz
 
-from states.request_states import RequestForm
+from states.request_states import RequestForm, OvertimeForm
 from keyboards.calendar import build_calendar, CalendarCallback
 from keyboards.request_kb import (
     request_type_keyboard, hours_or_days_keyboard, time_keyboard, fmt_time,
@@ -209,6 +209,10 @@ async def choose_start_date(call: CallbackQuery, callback_data: CalendarCallback
     CalendarCallback.filter(F.action.in_({"prev_month", "next_month"})),
     RequestForm.choosing_end_date,
 )
+@router.callback_query(
+    CalendarCallback.filter(F.action.in_({"prev_month", "next_month"})),
+    OvertimeForm.choosing_date,
+)
 async def navigate_calendar(call: CallbackQuery, callback_data: CalendarCallback):
     await call.message.edit_reply_markup(
         reply_markup=build_calendar(callback_data.year, callback_data.month)
@@ -344,6 +348,139 @@ async def confirm_request(call: CallbackQuery, state: FSMContext, bot: Bot, admi
 @router.callback_query(F.data == "cancel_request", RequestForm.confirming)
 async def cancel_request(call: CallbackQuery, state: FSMContext):
     logger.info("❌ Заявка отменена | %s", _u(call))
+    await state.clear()
+    await call.message.edit_text("❌ Заявка отменена.")
+    await call.message.answer("Главное меню:", reply_markup=user_main_menu())
+    await call.answer()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ─── ПЕРЕРАБОТКА ─────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.message(F.text == "🕐 Подать переработку")
+async def start_overtime(message: Message, state: FSMContext):
+    logger.info("🕐 Подать переработку | шаг 1: выбор даты | %s", _u(message))
+    await state.clear()
+    await state.set_state(OvertimeForm.choosing_date)
+    await message.answer(
+        "🕐 <b>Заявка на переработку</b>\n\n"
+        "📅 <b>Выберите дату переработки:</b>",
+        reply_markup=build_calendar(),
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(CalendarCallback.filter(F.action == "day"), OvertimeForm.choosing_date)
+async def overtime_choose_date(call: CallbackQuery, callback_data: CalendarCallback, state: FSMContext):
+    chosen = date(callback_data.year, callback_data.month, callback_data.day)
+    if chosen > date.today():
+        await call.answer("⚠️ Нельзя подать переработку на будущую дату!", show_alert=True)
+        return
+    logger.info("🕐 шаг 2: дата переработки=%s | %s", chosen, _u(call))
+    await state.update_data(overtime_date=chosen.isoformat())
+    await state.set_state(OvertimeForm.entering_hours)
+    await call.message.edit_text(
+        f"✅ Дата: <b>{chosen.strftime('%d.%m.%Y')}</b>\n\n"
+        f"⏱ <b>Сколько часов переработали?</b>\n"
+        f"Введите число от 0.5 до 12 (например: 1, 1.5, 2):",
+        parse_mode="HTML",
+    )
+    await call.answer()
+
+
+@router.message(OvertimeForm.entering_hours)
+async def overtime_enter_hours(message: Message, state: FSMContext):
+    text = message.text.strip().replace(",", ".")
+    try:
+        hours = float(text)
+        if not (0.5 <= hours <= 12):
+            raise ValueError
+    except ValueError:
+        await message.answer("⚠️ Введите число от 0.5 до 12 (например: 1, 1.5, 2)")
+        return
+    logger.info("🕐 шаг 3: часов переработки=%.1f | %s", hours, _u(message))
+    await state.update_data(overtime_hours=hours)
+    await state.set_state(OvertimeForm.entering_reason)
+    await message.answer(
+        f"✅ Часов: <b>{hours:.1f} ч.</b>\n\n"
+        f"✏️ <b>Укажите причину переработки</b> (или напишите «—»):",
+        parse_mode="HTML",
+    )
+
+
+@router.message(OvertimeForm.entering_reason)
+async def overtime_enter_reason(message: Message, state: FSMContext):
+    reason = message.text.strip()
+    logger.info("🕐 шаг 4: причина=%r | %s", reason[:50], _u(message))
+    await state.update_data(overtime_reason=reason)
+    data = await state.get_data()
+
+    chosen = date.fromisoformat(data["overtime_date"])
+    hours = data["overtime_hours"]
+    h_str = f"{hours:.0f}" if hours == int(hours) else f"{hours:.1f}"
+
+    summary = (
+        f"📄 <b>Итог заявки на переработку:</b>\n\n"
+        f"📅 Дата: <b>{chosen.strftime('%d.%m.%Y')}</b>\n"
+        f"⏱ Длительность: <b>{h_str} ч.</b>\n"
+        f"💬 Причина: <b>{reason}</b>\n\n"
+        f"Всё верно?"
+    )
+    await state.set_state(OvertimeForm.confirming)
+    await message.answer(summary, reply_markup=confirm_keyboard(), parse_mode="HTML")
+
+
+@router.callback_query(F.data == "confirm_request", OvertimeForm.confirming)
+async def overtime_confirm(call: CallbackQuery, state: FSMContext, bot: Bot, admin_ids: list[int]):
+    data = await state.get_data()
+    await state.clear()
+
+    chosen = date.fromisoformat(data["overtime_date"])
+    hours = data["overtime_hours"]
+    h_str = f"{hours:.0f}" if hours == int(hours) else f"{hours:.1f}"
+
+    async with AsyncSessionFactory() as session:
+        user = await get_or_create_user(session, call.from_user.id, call.from_user.full_name)
+        req = await create_request(
+            session,
+            user_id=user.id,
+            start_date=chosen,
+            end_date=chosen,
+            type=RequestType.overtime,
+            hours=hours,
+            reason=data["overtime_reason"],
+        )
+
+    logger.info("✅ Переработка #%d создана | %.1f ч. | %s", req.id, hours, _u(call))
+
+    await call.message.edit_text(
+        f"✅ <b>Заявка на переработку #{req.id} отправлена!</b>\n\n"
+        f"Вы получите уведомление, когда администратор примет решение.",
+        parse_mode="HTML",
+    )
+    await call.message.answer("Главное меню:", reply_markup=user_main_menu())
+
+    admin_text = (
+        f"🕐 <b>Переработка #{req.id}</b>\n\n"
+        f"👤 Сотрудник: <b>{call.from_user.full_name}</b> (ID: {call.from_user.id})\n"
+        f"📅 Дата: <b>{chosen.strftime('%d.%m.%Y')}</b>\n"
+        f"⏱ Длительность: <b>{h_str} ч.</b>\n"
+        f"💬 Причина: <b>{data['overtime_reason']}</b>"
+    )
+    for admin_id in admin_ids:
+        try:
+            await bot.send_message(admin_id, admin_text, reply_markup=admin_request_keyboard(req.id), parse_mode="HTML")
+            logger.info("   уведомлен администратор id=%s о переработке #%d", admin_id, req.id)
+        except Exception as e:
+            logger.warning("   не удалось уведомить администратора id=%s: %s", admin_id, e)
+
+    await call.answer()
+
+
+@router.callback_query(F.data == "cancel_request", OvertimeForm.confirming)
+async def overtime_cancel(call: CallbackQuery, state: FSMContext):
+    logger.info("❌ Переработка отменена | %s", _u(call))
     await state.clear()
     await call.message.edit_text("❌ Заявка отменена.")
     await call.message.answer("Главное меню:", reply_markup=user_main_menu())

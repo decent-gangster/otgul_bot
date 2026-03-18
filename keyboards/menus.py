@@ -6,6 +6,7 @@ def user_main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📝 Подать заявку")],
+            [KeyboardButton(text="🕐 Подать переработку")],
             [KeyboardButton(text="📋 Мои заявки")],
             [KeyboardButton(text="💰 Мой баланс")],
         ],
@@ -21,6 +22,7 @@ def admin_main_menu() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="📬 Список новых заявок")],
             [KeyboardButton(text="👥 Управление сотрудниками")],
             [KeyboardButton(text="📝 Подать заявку")],
+            [KeyboardButton(text="🕐 Подать переработку")],
             [KeyboardButton(text="💰 Мой баланс")],
         ],
         resize_keyboard=True,

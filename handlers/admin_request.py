@@ -10,8 +10,8 @@ from states.request_states import AdminReviewForm
 from keyboards.request_kb import RequestActionCallback
 from keyboards.menus import admin_main_menu
 from database.engine import AsyncSessionFactory
-from database.crud import update_request_status
-from database.models import TimeOffRequest, User, RequestStatus
+from database.crud import update_request_status, add_overtime_hours
+from database.models import TimeOffRequest, User, RequestStatus, RequestType
 from utils.formatters import format_request_period, format_request_duration
 
 logger = logging.getLogger(__name__)
@@ -67,6 +67,9 @@ async def approve_request(
             return
 
         await update_request_status(session, request_id, status=RequestStatus.approved)
+        if req.type == RequestType.overtime and req.hours:
+            await add_overtime_hours(session, req.user_id, req.hours)
+            logger.info("   начислено %.1f ч. переработки пользователю id=%d", req.hours, user.tg_id)
         logger.info("   заявка #%d → approved | сотрудник id=%d %r | %s", request_id, user.tg_id, user.full_name, _a(call))
 
     period = format_request_period(req)

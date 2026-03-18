@@ -32,6 +32,11 @@ async def init_db():
             await conn.execute(text("ALTER TABLE time_off_requests ADD COLUMN time_to VARCHAR(5)"))
         except Exception:
             pass
+        # Миграция v4: баланс переработки
+        try:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN overtime_hours REAL NOT NULL DEFAULT 0.0"))
+        except Exception:
+            pass
 
 
 async def get_session() -> AsyncSession:

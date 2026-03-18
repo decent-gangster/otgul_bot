@@ -13,6 +13,14 @@ class RequestForm(StatesGroup):
     confirming = State()           # подтверждение перед отправкой
 
 
+class OvertimeForm(StatesGroup):
+    """Состояния для подачи заявки на переработку."""
+    choosing_date = State()    # выбор даты переработки
+    entering_hours = State()   # ввод количества часов
+    entering_reason = State()  # ввод причины
+    confirming = State()       # подтверждение
+
+
 class AdminReviewForm(StatesGroup):
     """Состояния для обработки заявки администратором."""
     choosing_request = State()   # выбор заявки из списка

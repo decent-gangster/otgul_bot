@@ -75,10 +75,25 @@ async def cmd_balance(message: Message):
         "июле", "августе", "сентябре", "октябре", "ноябре", "декабре",
     ]
 
+    ot_hours = user.overtime_hours or 0
+    ot_days = int(ot_hours // 9)
+    ot_rem = ot_hours % 9
+    if ot_rem == int(ot_rem):
+        ot_rem_str = str(int(ot_rem))
+    else:
+        ot_rem_str = f"{ot_rem:.1f}"
+    if ot_days > 0 and ot_rem > 0:
+        overtime_str = f"{ot_days} д. {ot_rem_str} ч."
+    elif ot_days > 0:
+        overtime_str = f"{ot_days} д."
+    else:
+        overtime_str = f"{ot_rem_str} ч."
+
     await message.answer(
         f"💰 <b>Ваш баланс и статистика</b>\n\n"
         f"📅 Отгулов взято в {month_names[today.month]}: <b>{days_this_month} д.</b>\n"
-        f"🏦 Остаток баланса: <b>{user.vacation_balance:.1f} д.</b>\n\n"
+        f"🏦 Остаток баланса: <b>{user.vacation_balance:.1f} д.</b>\n"
+        f"🕐 Переработка: <b>{overtime_str}</b>\n\n"
         f"📊 <b>Всего заявок:</b>\n"
         f"  ✅ Одобрено: {len(approved)}\n"
         f"  ⏳ На рассмотрении: {len(pending)}\n"

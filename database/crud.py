@@ -40,6 +40,15 @@ async def update_vacation_balance(session: AsyncSession, tg_id: int, balance: fl
         await session.commit()
 
 
+async def add_overtime_hours(session: AsyncSession, user_id: int, hours: float) -> None:
+    """Начисляет часы переработки на баланс пользователя."""
+    result = await session.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user:
+        user.overtime_hours = (user.overtime_hours or 0) + hours
+        await session.commit()
+
+
 # ─── Заявки ─────────────────────────────────────────────────────────────────
 
 async def create_request(session: AsyncSession, **kwargs) -> TimeOffRequest:
