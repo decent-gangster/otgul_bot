@@ -42,9 +42,10 @@ def _u(event) -> str:
 
 
 def format_duration(req_data: dict) -> str:
-    """Возвращает строку длительности: '2 д.' или '4 ч.'"""
+    """Возвращает строку длительности: '2 д.' или '3.5 ч.'"""
     if req_data.get("hours"):
-        return f"{req_data['hours']:.0f} ч."
+        h = req_data["hours"]
+        return f"{h:.0f} ч." if h == int(h) else f"{h:.1f} ч."
     start = date.fromisoformat(req_data["start_date"])
     end = date.fromisoformat(req_data["end_date"])
     return f"{(end - start).days + 1} д."
