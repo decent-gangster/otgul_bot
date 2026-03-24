@@ -49,6 +49,30 @@ async def add_overtime_hours(session: AsyncSession, user_id: int, hours: float) 
         await session.commit()
 
 
+async def deduct_overtime_hours(session: AsyncSession, user_id: int, hours: float) -> None:
+    """Списывает часы переработки с баланса пользователя."""
+    result = await session.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user:
+        user.overtime_hours = max(0.0, (user.overtime_hours or 0) - hours)
+        await session.commit()
+
+
+async def has_overtime_on_date(session: AsyncSession, user_id: int, target_date: date) -> bool:
+    """Проверяет, есть ли у пользователя pending/approved заявка на переработку на указанную дату."""
+    result = await session.execute(
+        select(TimeOffRequest).where(
+            and_(
+                TimeOffRequest.user_id == user_id,
+                TimeOffRequest.type == RequestType.overtime,
+                TimeOffRequest.start_date == target_date,
+                TimeOffRequest.status.in_([RequestStatus.pending, RequestStatus.approved]),
+            )
+        )
+    )
+    return result.scalar_one_or_none() is not None
+
+
 # ─── Заявки ─────────────────────────────────────────────────────────────────
 
 async def create_request(session: AsyncSession, **kwargs) -> TimeOffRequest:

@@ -15,7 +15,7 @@ from keyboards.request_kb import (
 )
 from keyboards.menus import user_main_menu
 from database.engine import AsyncSessionFactory
-from database.crud import get_or_create_user, create_request
+from database.crud import get_or_create_user, create_request, has_overtime_on_date
 from database.models import RequestType
 
 logger = logging.getLogger(__name__)
@@ -315,6 +315,25 @@ async def enter_reason(message: Message, state: FSMContext):
 @router.callback_query(F.data == "confirm_request", RequestForm.confirming)
 async def confirm_request(call: CallbackQuery, state: FSMContext, bot: Bot, admin_ids: list[int]):
     data = await state.get_data()
+
+    # Проверка баланса переработки для «отгул с содержанием»
+    if data.get("request_type") == "отгул (с содержанием)":
+        start = date.fromisoformat(data["start_date"])
+        end = date.fromisoformat(data["end_date"])
+        needed = data["hours"] if data.get("hours") else ((end - start).days + 1) * 9
+        async with AsyncSessionFactory() as session:
+            user = await get_or_create_user(session, call.from_user.id, call.from_user.full_name)
+            balance = user.overtime_hours or 0
+        if balance < needed:
+            bal_d = int(balance // 9)
+            bal_h = balance % 9
+            bal_str = f"{bal_d} д. {bal_h:.0f} ч." if bal_d > 0 and bal_h > 0 else (f"{bal_d} д." if bal_d > 0 else f"{bal_h:.1f} ч.")
+            await call.answer(
+                f"⚠️ Недостаточно переработки!\nНужно: {needed:.1f} ч., баланс: {bal_str}",
+                show_alert=True,
+            )
+            return
+
     await state.clear()
 
     async with AsyncSessionFactory() as session:
@@ -407,6 +426,15 @@ async def overtime_choose_date(call: CallbackQuery, callback_data: CalendarCallb
     if chosen > date.today():
         await call.answer("⚠️ Нельзя подать переработку на будущую дату!", show_alert=True)
         return
+
+    async with AsyncSessionFactory() as session:
+        user = await get_or_create_user(session, call.from_user.id, call.from_user.full_name)
+        duplicate = await has_overtime_on_date(session, user.id, chosen)
+    if duplicate:
+        logger.warning("⚠ Дубль переработки на дату %s | %s", chosen, _u(call))
+        await call.answer("⚠️ У вас уже есть заявка на переработку за эту дату!", show_alert=True)
+        return
+
     logger.info("🕐 шаг 2: дата переработки=%s | %s", chosen, _u(call))
     await state.update_data(overtime_date=chosen.isoformat())
     await state.set_state(OvertimeForm.entering_hours)

@@ -10,7 +10,7 @@ from states.request_states import AdminReviewForm
 from keyboards.request_kb import RequestActionCallback
 from keyboards.menus import admin_main_menu
 from database.engine import AsyncSessionFactory
-from database.crud import update_request_status, add_overtime_hours
+from database.crud import update_request_status, add_overtime_hours, deduct_overtime_hours
 from database.models import TimeOffRequest, User, RequestStatus, RequestType
 from utils.formatters import format_request_period, format_request_duration
 
@@ -70,6 +70,10 @@ async def approve_request(
         if req.type == RequestType.overtime and req.hours:
             await add_overtime_hours(session, req.user_id, req.hours)
             logger.info("   начислено %.1f ч. переработки пользователю id=%d", req.hours, user.tg_id)
+        elif req.type == RequestType.otgul_paid:
+            hours_to_deduct = req.hours if req.hours else ((req.end_date - req.start_date).days + 1) * 9
+            await deduct_overtime_hours(session, req.user_id, hours_to_deduct)
+            logger.info("   списано %.1f ч. переработки у пользователя id=%d", hours_to_deduct, user.tg_id)
         logger.info("   заявка #%d → approved | сотрудник id=%d %r | %s", request_id, user.tg_id, user.full_name, _a(call))
 
     period = format_request_period(req)
