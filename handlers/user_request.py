@@ -441,7 +441,7 @@ async def overtime_choose_date(call: CallbackQuery, callback_data: CalendarCallb
     await call.message.edit_text(
         f"✅ Дата: <b>{chosen.strftime('%d.%m.%Y')}</b>\n\n"
         f"⏱ <b>Сколько часов переработали?</b>\n"
-        f"Введите число от 0.5 до 12 (например: 1, 1.5, 2):",
+        f"Введите число от 0.5 до 9 (например: 1, 1.5, 2):",
         parse_mode="HTML",
     )
     await call.answer()
@@ -452,10 +452,10 @@ async def overtime_enter_hours(message: Message, state: FSMContext):
     text = message.text.strip().replace(",", ".")
     try:
         hours = float(text)
-        if not (0.5 <= hours <= 12):
+        if not (0.5 <= hours <= 9):
             raise ValueError
     except ValueError:
-        await message.answer("⚠️ Введите число от 0.5 до 12 (например: 1, 1.5, 2)")
+        await message.answer("⚠️ Введите число от 0.5 до 9 (например: 1, 1.5, 2)")
         return
     logger.info("🕐 шаг 3: часов переработки=%.1f | %s", hours, _u(message))
     await state.update_data(overtime_hours=hours)
