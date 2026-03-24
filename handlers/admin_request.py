@@ -89,7 +89,7 @@ async def approve_request(
             f"📋 Тип: <b>{type_label}</b>\n"
             f"📅 Период: <b>{period}</b>\n"
             f"🔢 Длительность: <b>{duration}</b>\n\n"
-            f"Хорошего отдыха! 😊",
+            + ("💪 Удачи на работе! 😊" if req.type == RequestType.overtime else "Хорошего отдыха! 😊"),
             parse_mode="HTML",
         )
         logger.info("   уведомление отправлено пользователю id=%d", user.tg_id)
