@@ -45,7 +45,7 @@ def request_type_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура выбора типа заявки."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text="🗓 Отгул (свой счёт)",
+            text="🗓 Отгул",
             callback_data=RequestTypeCallback(type_value="отгул").pack()
         )],
         [InlineKeyboardButton(
@@ -56,6 +56,14 @@ def request_type_keyboard() -> InlineKeyboardMarkup:
             text="🏥 Больничный",
             callback_data=RequestTypeCallback(type_value="больничный").pack()
         )],
+    ])
+
+
+def otgul_type_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура выбора вида отгула: за свой счёт или с содержанием."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💸 За свой счёт", callback_data="otgul_own")],
+        [InlineKeyboardButton(text="✅ С содержанием (отработка)", callback_data="otgul_paid")],
     ])
 
 
