@@ -9,7 +9,7 @@ import pytz
 from states.request_states import RequestForm, OvertimeForm
 from keyboards.calendar import build_calendar, CalendarCallback
 from keyboards.request_kb import (
-    request_type_keyboard, hours_or_days_keyboard, time_keyboard, fmt_time,
+    request_type_keyboard, otgul_type_keyboard, hours_or_days_keyboard, time_keyboard, fmt_time,
     confirm_keyboard, RequestTypeCallback, TimeCallback, admin_request_keyboard,
     TIME_SLOTS,
 )
@@ -31,6 +31,7 @@ def _now_raw() -> str:
 
 REQUEST_TYPE_LABELS = {
     "отгул": "🗓 Отгул (свой счёт)",
+    "отгул (с содержанием)": "🗓 Отгул (с содержанием)",
     "отпуск": "🌴 Отпуск",
     "больничный": "🏥 Больничный",
 }
@@ -68,11 +69,11 @@ async def choose_type(call: CallbackQuery, callback_data: RequestTypeCallback, s
     await state.update_data(request_type=req_type, hours=None)
 
     if req_type == "отгул":
-        await state.set_state(RequestForm.choosing_hours_or_days)
+        await state.set_state(RequestForm.choosing_otgul_type)
         await call.message.edit_text(
-            f"✅ Тип: <b>{REQUEST_TYPE_LABELS[req_type]}</b>\n\n"
-            f"⏱ <b>Как брать отгул?</b>",
-            reply_markup=hours_or_days_keyboard(),
+            "✅ Тип: <b>🗓 Отгул</b>\n\n"
+            "📌 <b>Выберите вид отгула:</b>",
+            reply_markup=otgul_type_keyboard(),
             parse_mode="HTML",
         )
     else:
@@ -83,6 +84,35 @@ async def choose_type(call: CallbackQuery, callback_data: RequestTypeCallback, s
             reply_markup=build_calendar(),
             parse_mode="HTML",
         )
+    await call.answer()
+
+
+# ─── Шаг 2б: Вид отгула (за свой счёт / с содержанием) ──────────────────────
+@router.callback_query(F.data == "otgul_own", RequestForm.choosing_otgul_type)
+async def choose_otgul_own(call: CallbackQuery, state: FSMContext):
+    logger.info("📝 шаг 2б: отгул за свой счёт | %s", _u(call))
+    await state.update_data(request_type="отгул")
+    await state.set_state(RequestForm.choosing_hours_or_days)
+    await call.message.edit_text(
+        "✅ Вид: <b>💸 За свой счёт</b>\n\n"
+        "📌 <b>Как взять отгул?</b>",
+        reply_markup=hours_or_days_keyboard(),
+        parse_mode="HTML",
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data == "otgul_paid", RequestForm.choosing_otgul_type)
+async def choose_otgul_paid(call: CallbackQuery, state: FSMContext):
+    logger.info("📝 шаг 2б: отгул с содержанием | %s", _u(call))
+    await state.update_data(request_type="отгул (с содержанием)")
+    await state.set_state(RequestForm.choosing_hours_or_days)
+    await call.message.edit_text(
+        "✅ Вид: <b>✅ С содержанием (отработка)</b>\n\n"
+        "📌 <b>Как взять отгул?</b>",
+        reply_markup=hours_or_days_keyboard(),
+        parse_mode="HTML",
+    )
     await call.answer()
 
 
