@@ -7,7 +7,7 @@ from datetime import date
 
 from keyboards.menus import user_main_menu, admin_main_menu
 from database.engine import AsyncSessionFactory
-from database.crud import get_or_create_user, get_user_month_days, get_requests_by_user
+from database.crud import get_or_create_user, get_user_month_days, get_requests_by_user, get_awaiting_work_requests
 from database.models import UserRole, RequestStatus, RequestType
 from utils.formatters import format_request_period, format_request_duration
 
@@ -62,6 +62,7 @@ async def cmd_balance(message: Message):
         user = await get_or_create_user(session, message.from_user.id, message.from_user.full_name)
         days_this_month = await get_user_month_days(session, user.id, today.year, today.month)
         all_requests = await get_requests_by_user(session, user.id)
+        awaiting = await get_awaiting_work_requests(session, user.id)
 
     approved = [r for r in all_requests if r.status == RequestStatus.approved]
     pending  = [r for r in all_requests if r.status == RequestStatus.pending]
@@ -90,11 +91,27 @@ async def cmd_balance(message: Message):
     else:
         overtime_str = f"{ot_rem_str} ч."
 
+    # Блок долгов по отработке
+    debt_block = ""
+    if awaiting:
+        total_debt = sum(r.debt_hours or 0 for r in awaiting)
+        debt_lines = []
+        for r in awaiting:
+            from utils.formatters import format_request_period
+            debt_lines.append(
+                f"  • Заявка <b>#{r.id}</b> ({format_request_period(r)}): <b>{r.debt_hours:.1f} ч.</b>"
+            )
+        debt_block = (
+            f"\n\n⚠️ <b>Долг по отработке: {total_debt:.1f} ч.</b>\n"
+            + "\n".join(debt_lines)
+        )
+
     await message.answer(
         f"💰 <b>Ваш баланс и статистика</b>\n\n"
         f"📅 Отгулов взято в {month_names[today.month]}: <b>{days_this_month} д.</b>\n"
         f"🏦 Остаток баланса: <b>{user.vacation_balance:.1f} д.</b>\n"
-        f"🕐 Переработка: <b>{overtime_str}</b>\n\n"
+        f"🕐 Переработка: <b>{overtime_str}</b>"
+        f"{debt_block}\n\n"
         f"📊 <b>Всего заявок:</b>\n"
         f"  ✅ Одобрено: {len(approved)}\n"
         f"  ⏳ На рассмотрении: {len(pending)}\n"

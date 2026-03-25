@@ -120,6 +120,19 @@ async def update_request_status(
         await session.commit()
 
 
+async def get_awaiting_work_requests(session: AsyncSession, user_id: int) -> list[TimeOffRequest]:
+    """Возвращает заявки пользователя со статусом awaiting_work."""
+    result = await session.execute(
+        select(TimeOffRequest).where(
+            and_(
+                TimeOffRequest.user_id == user_id,
+                TimeOffRequest.status == RequestStatus.awaiting_work,
+            )
+        ).order_by(TimeOffRequest.id.asc())
+    )
+    return result.scalars().all()
+
+
 async def apply_overtime_to_debts(session: AsyncSession, user_id: int, hours: float) -> tuple[float, list[int]]:
     """Гасит долги по отработке (awaiting_work) начиная с самых старых.
     Возвращает (остаток_часов, список_закрытых_request_id).
