@@ -29,12 +29,13 @@ def _u(message: Message) -> str:
 
 
 @router.message(Command("start"))
-async def cmd_start(message: Message):
+async def cmd_start(message: Message, admin_ids: list[int]):
     logger.info("▶ /start | пользователь %s", _u(message))
     async with AsyncSessionFactory() as session:
         user = await get_or_create_user(session, message.from_user.id, message.from_user.full_name)
 
-    if user.role == UserRole.admin:
+    is_admin = message.from_user.id in admin_ids or user.role == UserRole.admin
+    if is_admin:
         role_label = "👑 Администратор"
         menu = admin_main_menu()
         logger.info("   роль: ADMIN | показано меню администратора | %s", _u(message))
@@ -149,10 +150,11 @@ async def cmd_my_requests(message: Message):
 
 
 @router.message(F.text == "🔙 Назад")
-async def cmd_back(message: Message):
+async def cmd_back(message: Message, admin_ids: list[int]):
     logger.info("🔙 Назад | %s", _u(message))
     async with AsyncSessionFactory() as session:
         user = await get_or_create_user(session, message.from_user.id, message.from_user.full_name)
 
-    menu = admin_main_menu() if user.role == UserRole.admin else user_main_menu()
+    is_admin = message.from_user.id in admin_ids or user.role == UserRole.admin
+    menu = admin_main_menu() if is_admin else user_main_menu()
     await message.answer("Главное меню:", reply_markup=menu)
