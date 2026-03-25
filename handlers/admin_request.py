@@ -126,17 +126,14 @@ async def approve_request(
             header = f"🎉 <b>Ваша заявка #{req.id} одобрена!</b> (ожидает отработки)"
         else:
             header = f"🎉 <b>Ваша заявка #{req.id} одобрена!</b>"
-        if req.type == RequestType.overtime:
-            closing = "💪 Удачи на работе! 😊"
-        else:
-            closing = "Хорошего отдыха! 😊"
+        closing = "" if req.type == RequestType.overtime else "\n\nХорошего отдыха! 😊"
         await bot.send_message(
             user.tg_id,
             f"{header}\n\n"
             f"📋 Тип: <b>{type_label}</b>\n"
             f"📅 Период: <b>{period}</b>\n"
             f"🔢 Длительность: <b>{duration}</b>"
-            f"{overtime_note}\n\n"
+            f"{overtime_note}"
             f"{closing}",
             parse_mode="HTML",
         )
@@ -144,17 +141,18 @@ async def approve_request(
     except Exception as e:
         logger.warning("   не удалось уведомить пользователя id=%d: %s", user.tg_id, e)
 
-    try:
-        await bot.send_message(
-            group_id,
-            f"📢 <b>Информация об отсутствии</b>\n\n"
-            f"Сотрудник <b>{user.full_name}</b> будет отсутствовать "
-            f"<b>{period}</b> ({type_label}, {duration}).",
-            parse_mode="HTML",
-        )
-        logger.info("   анонс отправлен в группу id=%d", group_id)
-    except Exception as e:
-        logger.warning("   не удалось отправить анонс в группу id=%d: %s", group_id, e)
+    if req.type != RequestType.overtime:
+        try:
+            await bot.send_message(
+                group_id,
+                f"📢 <b>Информация об отсутствии</b>\n\n"
+                f"Сотрудник <b>{user.full_name}</b> будет отсутствовать "
+                f"<b>{period}</b> ({type_label}, {duration}).",
+                parse_mode="HTML",
+            )
+            logger.info("   анонс отправлен в группу id=%d", group_id)
+        except Exception as e:
+            logger.warning("   не удалось отправить анонс в группу id=%d: %s", group_id, e)
 
     await call.answer("✅ Заявка одобрена")
 
