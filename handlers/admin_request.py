@@ -141,18 +141,25 @@ async def approve_request(
     except Exception as e:
         logger.warning("   не удалось уведомить пользователя id=%d: %s", user.tg_id, e)
 
-    if req.type != RequestType.overtime:
-        try:
-            await bot.send_message(
-                group_id,
+    try:
+        if req.type == RequestType.overtime:
+            from datetime import date as date_
+            verb = "работал" if req.start_date < date_.today() else "работает"
+            group_text = (
+                f"🕐 <b>Переработка</b>\n\n"
+                f"Сотрудник <b>{user.full_name}</b> {verb} сверхурочно "
+                f"<b>{period}</b> — {duration}."
+            )
+        else:
+            group_text = (
                 f"📢 <b>Информация об отсутствии</b>\n\n"
                 f"Сотрудник <b>{user.full_name}</b> будет отсутствовать "
-                f"<b>{period}</b> ({type_label}, {duration}).",
-                parse_mode="HTML",
+                f"<b>{period}</b> ({type_label}, {duration})."
             )
-            logger.info("   анонс отправлен в группу id=%d", group_id)
-        except Exception as e:
-            logger.warning("   не удалось отправить анонс в группу id=%d: %s", group_id, e)
+        await bot.send_message(group_id, group_text, parse_mode="HTML")
+        logger.info("   анонс отправлен в группу id=%d", group_id)
+    except Exception as e:
+        logger.warning("   не удалось отправить анонс в группу id=%d: %s", group_id, e)
 
     await call.answer("✅ Заявка одобрена")
 
