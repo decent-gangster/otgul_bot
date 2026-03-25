@@ -14,6 +14,7 @@ class UserRole(str, enum.Enum):
 
 class RequestType(str, enum.Enum):
     otgul = "отгул"
+    otgul_paid = "отгул (с содержанием)"
     vacation = "отпуск"
     sick = "больничный"
     overtime = "переработка"
@@ -23,6 +24,7 @@ class RequestStatus(str, enum.Enum):
     pending = "pending"
     approved = "approved"
     rejected = "rejected"
+    awaiting_work = "awaiting_work"
 
 
 class User(Base):
@@ -55,6 +57,7 @@ class TimeOffRequest(Base):
     reason = Column(Text, nullable=True)
     status = Column(Enum(RequestStatus), default=RequestStatus.pending, nullable=False)
     admin_comment = Column(Text, nullable=True)
+    debt_hours = Column(Float, nullable=True)  # остаток часов к отработке (для awaiting_work)
 
     user = relationship("User", back_populates="requests")
 

@@ -316,24 +316,6 @@ async def enter_reason(message: Message, state: FSMContext):
 async def confirm_request(call: CallbackQuery, state: FSMContext, bot: Bot, admin_ids: list[int]):
     data = await state.get_data()
 
-    # Проверка баланса переработки для «отгул с содержанием»
-    if data.get("request_type") == "отгул (с содержанием)":
-        start = date.fromisoformat(data["start_date"])
-        end = date.fromisoformat(data["end_date"])
-        needed = data["hours"] if data.get("hours") else ((end - start).days + 1) * 9
-        async with AsyncSessionFactory() as session:
-            user = await get_or_create_user(session, call.from_user.id, call.from_user.full_name)
-            balance = user.overtime_hours or 0
-        if balance < needed:
-            bal_d = int(balance // 9)
-            bal_h = balance % 9
-            bal_str = f"{bal_d} д. {bal_h:.0f} ч." if bal_d > 0 and bal_h > 0 else (f"{bal_d} д." if bal_d > 0 else f"{bal_h:.1f} ч.")
-            await call.answer(
-                f"⚠️ Недостаточно переработки!\nНужно: {needed:.1f} ч., баланс: {bal_str}",
-                show_alert=True,
-            )
-            return
-
     await state.clear()
 
     async with AsyncSessionFactory() as session:

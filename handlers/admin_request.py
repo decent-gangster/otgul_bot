@@ -10,7 +10,7 @@ from states.request_states import AdminReviewForm
 from keyboards.request_kb import RequestActionCallback
 from keyboards.menus import admin_main_menu
 from database.engine import AsyncSessionFactory
-from database.crud import update_request_status, add_overtime_hours, deduct_overtime_hours
+from database.crud import update_request_status, add_overtime_hours, deduct_overtime_hours, apply_overtime_to_debts
 from database.models import TimeOffRequest, User, RequestStatus, RequestType
 from utils.formatters import format_request_period, format_request_duration
 
@@ -66,15 +66,50 @@ async def approve_request(
             await call.answer("ℹ️ Заявка уже была обработана ранее.", show_alert=True)
             return
 
-        await update_request_status(session, request_id, status=RequestStatus.approved)
+        # ── Логика начисления/списания часов ─────────────────────────────────
+        final_status = RequestStatus.approved
+        debt_hours = None
+        overtime_note = ""  # дополнительная строка в уведомление сотруднику
+
         if req.type == RequestType.overtime and req.hours:
-            await add_overtime_hours(session, req.user_id, req.hours)
-            logger.info("   начислено %.1f ч. переработки пользователю id=%d", req.hours, user.tg_id)
+            # Сначала гасим долги, остаток идёт в баланс
+            leftover, closed_ids = await apply_overtime_to_debts(session, req.user_id, req.hours)
+            if leftover > 0:
+                await add_overtime_hours(session, req.user_id, leftover)
+            if closed_ids:
+                ids_str = ", ".join(f"#{i}" for i in closed_ids)
+                overtime_note = f"\n✅ Долг по отработке закрыт (заявки {ids_str})."
+                logger.info("   закрыты долги %s у пользователя id=%d", ids_str, user.tg_id)
+            logger.info("   начислено %.1f ч. переработки (в баланс %.1f ч.) пользователю id=%d",
+                        req.hours, leftover, user.tg_id)
+
         elif req.type == RequestType.otgul_paid:
-            hours_to_deduct = req.hours if req.hours else ((req.end_date - req.start_date).days + 1) * 9
-            await deduct_overtime_hours(session, req.user_id, hours_to_deduct)
-            logger.info("   списано %.1f ч. переработки у пользователя id=%d", hours_to_deduct, user.tg_id)
-        logger.info("   заявка #%d → approved | сотрудник id=%d %r | %s", request_id, user.tg_id, user.full_name, _a(call))
+            total_needed = req.hours if req.hours else ((req.end_date - req.start_date).days + 1) * 9
+            balance = user.overtime_hours or 0
+
+            if balance >= total_needed:
+                await deduct_overtime_hours(session, req.user_id, total_needed)
+                overtime_note = f"\n💳 Списано с баланса переработки: {total_needed:.1f} ч."
+                logger.info("   списано %.1f ч. с баланса у пользователя id=%d", total_needed, user.tg_id)
+            else:
+                deducted = balance
+                remaining = round(total_needed - deducted, 2)
+                if deducted > 0:
+                    await deduct_overtime_hours(session, req.user_id, deducted)
+                final_status = RequestStatus.awaiting_work
+                debt_hours = remaining
+                if deducted > 0:
+                    overtime_note = (
+                        f"\n💳 Списано с баланса: {deducted:.1f} ч."
+                        f"\n⏳ Осталось отработать: {remaining:.1f} ч."
+                    )
+                else:
+                    overtime_note = f"\n⏳ Необходимо отработать: {remaining:.1f} ч."
+                logger.info("   отгул с содержанием: списано %.1f ч., долг %.1f ч. у пользователя id=%d",
+                            deducted, remaining, user.tg_id)
+
+        await update_request_status(session, request_id, status=final_status, debt_hours=debt_hours)
+        logger.info("   заявка #%d → %s | сотрудник id=%d %r | %s", request_id, final_status, user.tg_id, user.full_name, _a(call))
 
     period = format_request_period(req)
     duration = format_request_duration(req)
@@ -87,13 +122,22 @@ async def approve_request(
     )
 
     try:
+        if final_status == RequestStatus.awaiting_work:
+            header = f"🎉 <b>Ваша заявка #{req.id} одобрена!</b> (ожидает отработки)"
+        else:
+            header = f"🎉 <b>Ваша заявка #{req.id} одобрена!</b>"
+        if req.type == RequestType.overtime:
+            closing = "💪 Удачи на работе! 😊"
+        else:
+            closing = "Хорошего отдыха! 😊"
         await bot.send_message(
             user.tg_id,
-            f"🎉 <b>Ваша заявка #{req.id} одобрена!</b>\n\n"
+            f"{header}\n\n"
             f"📋 Тип: <b>{type_label}</b>\n"
             f"📅 Период: <b>{period}</b>\n"
-            f"🔢 Длительность: <b>{duration}</b>\n\n"
-            + ("💪 Удачи на работе! 😊" if req.type == RequestType.overtime else "Хорошего отдыха! 😊"),
+            f"🔢 Длительность: <b>{duration}</b>"
+            f"{overtime_note}\n\n"
+            f"{closing}",
             parse_mode="HTML",
         )
         logger.info("   уведомление отправлено пользователю id=%d", user.tg_id)

@@ -107,6 +107,7 @@ async def update_request_status(
     request_id: int,
     status: RequestStatus,
     admin_comment: str = None,
+    debt_hours: float = None,
 ) -> None:
     result = await session.execute(select(TimeOffRequest).where(TimeOffRequest.id == request_id))
     req = result.scalar_one_or_none()
@@ -114,7 +115,43 @@ async def update_request_status(
         req.status = status
         if admin_comment is not None:
             req.admin_comment = admin_comment
+        if debt_hours is not None:
+            req.debt_hours = debt_hours
         await session.commit()
+
+
+async def apply_overtime_to_debts(session: AsyncSession, user_id: int, hours: float) -> tuple[float, list[int]]:
+    """Гасит долги по отработке (awaiting_work) начиная с самых старых.
+    Возвращает (остаток_часов, список_закрытых_request_id).
+    """
+    result = await session.execute(
+        select(TimeOffRequest).where(
+            and_(
+                TimeOffRequest.user_id == user_id,
+                TimeOffRequest.status == RequestStatus.awaiting_work,
+            )
+        ).order_by(TimeOffRequest.id.asc())
+    )
+    debts = result.scalars().all()
+
+    remaining = hours
+    closed_ids = []
+
+    for debt in debts:
+        if remaining <= 0:
+            break
+        debt_left = debt.debt_hours or 0
+        if remaining >= debt_left:
+            remaining -= debt_left
+            debt.debt_hours = 0
+            debt.status = RequestStatus.approved
+            closed_ids.append(debt.id)
+        else:
+            debt.debt_hours = debt_left - remaining
+            remaining = 0
+
+    await session.commit()
+    return remaining, closed_ids
 
 
 async def get_absent_today(session: AsyncSession) -> list[tuple[TimeOffRequest, User]]:

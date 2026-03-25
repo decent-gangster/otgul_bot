@@ -8,16 +8,17 @@ from datetime import date
 from keyboards.menus import user_main_menu, admin_main_menu
 from database.engine import AsyncSessionFactory
 from database.crud import get_or_create_user, get_user_month_days, get_requests_by_user
-from database.models import UserRole, RequestStatus
+from database.models import UserRole, RequestStatus, RequestType
 from utils.formatters import format_request_period, format_request_duration
 
 logger = logging.getLogger(__name__)
 router = Router()
 
 STATUS_LABELS = {
-    RequestStatus.pending:  "⏳ На рассмотрении",
-    RequestStatus.approved: "✅ Одобрена",
-    RequestStatus.rejected: "❌ Отклонена",
+    RequestStatus.pending:       "⏳ На рассмотрении",
+    RequestStatus.approved:      "✅ Одобрена",
+    RequestStatus.rejected:      "❌ Отклонена",
+    RequestStatus.awaiting_work: "🔄 Ожидает отработки",
 }
 
 
