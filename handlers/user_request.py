@@ -53,6 +53,18 @@ def format_duration(req_data: dict) -> str:
     return f"{(end - start).days + 1} д."
 
 
+def calc_work_hours(time_from: str, time_to: str) -> tuple[float, bool]:
+    """Рассчитывает рабочие часы, вычитая обед (12:00–13:00) при пересечении.
+    time_from, time_to в формате 'HH:MM'. Возвращает (hours, lunch_deducted)."""
+    from_h, from_m = map(int, time_from.split(":"))
+    to_h, to_m = map(int, time_to.split(":"))
+    from_min = from_h * 60 + from_m
+    to_min = to_h * 60 + to_m
+    lunch_start, lunch_end = 12 * 60, 13 * 60
+    overlap = max(0, min(to_min, lunch_end) - max(from_min, lunch_start))
+    return (to_min - from_min - overlap) / 60, overlap > 0
+
+
 # ─── Шаг 1: Подать заявку ────────────────────────────────────────────────────
 @router.message(F.text == "📝 Подать заявку")
 async def start_request(message: Message, state: FSMContext):
@@ -216,15 +228,16 @@ async def choose_time_to(call: CallbackQuery, callback_data: TimeCallback, state
     data = await state.get_data()
     time_from = data["time_from"]           # "08:00"
 
-    from_h, from_m = map(int, time_from.split(":"))
-    to_h, to_m = map(int, time_to.split(":"))
-    hours = (to_h * 60 + to_m - from_h * 60 - from_m) / 60
+    hours, lunch_deducted = calc_work_hours(time_from, time_to)
 
-    logger.info("📝 шаг 3в: время конца=%s, часов=%.1f | %s", time_to, hours, _u(call))
-    await state.update_data(time_to=time_to, hours=hours)
+    logger.info("📝 шаг 3в: время конца=%s, часов=%.1f, обед=%s | %s", time_to, hours, lunch_deducted, _u(call))
+    await state.update_data(time_to=time_to, hours=hours, lunch_deducted=lunch_deducted)
     await state.set_state(RequestForm.entering_reason)
+
+    lunch_note = "\n✂️ Обед (12:00–13:00) не считается" if lunch_deducted else ""
     await call.message.edit_text(
-        f"✅ Время: <b>{time_from} — {time_to} ({hours:.1f} ч.)</b>\n\n"
+        f"✅ Время: <b>{time_from} — {time_to}</b>{lunch_note}\n"
+        f"📊 Рабочих часов: <b>{hours:.1f} ч.</b>\n\n"
         f"✏️ <b>Укажите причину</b> (или напишите «—»):",
         parse_mode="HTML",
     )
@@ -354,7 +367,8 @@ async def enter_reason(message: Message, state: FSMContext):
     if not data.get("hours"):
         summary += f"📅 Конец: <b>{end.strftime('%d.%m.%Y')}</b>\n"
     if data.get("time_from") and data.get("time_to"):
-        summary += f"⏰ Время: <b>{data['time_from']} — {data['time_to']}</b>\n"
+        lunch_note = "\n   ✂️ Обед (12:00–13:00) не считается" if data.get("lunch_deducted") else ""
+        summary += f"⏰ Время: <b>{data['time_from']} — {data['time_to']}</b>{lunch_note}\n"
     summary += (
         f"🔢 Длительность: <b>{duration}</b>\n"
         f"💬 Причина: <b>{reason}</b>\n\n"
