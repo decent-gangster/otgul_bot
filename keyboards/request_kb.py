@@ -27,6 +27,10 @@ class RequestCancelBackCallback(CallbackData, prefix="req_cancel_back"):
     request_id: int
 
 
+class ReportPeriodCallback(CallbackData, prefix="report"):
+    period: str  # "current", "previous", "custom"
+
+
 class TimeCallback(CallbackData, prefix="time_pick"):
     value: str  # "0800" — без двоеточия, оно запрещено в CallbackData
 
@@ -102,6 +106,15 @@ def confirm_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm_request"),
             InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_request"),
         ]
+    ])
+
+
+def report_period_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура выбора периода для отчёта."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📅 Текущий месяц", callback_data=ReportPeriodCallback(period="current").pack())],
+        [InlineKeyboardButton(text="📅 Прошлый месяц", callback_data=ReportPeriodCallback(period="previous").pack())],
+        [InlineKeyboardButton(text="✏️ Указать период", callback_data=ReportPeriodCallback(period="custom").pack())],
     ])
 
 

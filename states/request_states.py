@@ -32,3 +32,8 @@ class AdminReviewForm(StatesGroup):
     """Состояния для обработки заявки администратором."""
     choosing_request = State()   # выбор заявки из списка
     entering_comment = State()   # ввод комментария при отказе
+
+
+class ReportForm(StatesGroup):
+    """Состояния для генерации отчёта."""
+    entering_period = State()    # ввод произвольного периода

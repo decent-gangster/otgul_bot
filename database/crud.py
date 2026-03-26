@@ -290,6 +290,25 @@ async def get_user_month_days(session: AsyncSession, user_id: int, year: int, mo
     return total
 
 
+async def get_approved_requests_for_period(
+    session: AsyncSession, start: date, end: date
+) -> list[tuple[TimeOffRequest, User]]:
+    """Все одобренные заявки, чья дата начала попадает в указанный период."""
+    result = await session.execute(
+        select(TimeOffRequest, User)
+        .join(User, TimeOffRequest.user_id == User.id)
+        .where(
+            and_(
+                TimeOffRequest.status == RequestStatus.approved,
+                TimeOffRequest.start_date >= start,
+                TimeOffRequest.start_date <= end,
+            )
+        )
+        .order_by(TimeOffRequest.start_date)
+    )
+    return result.all()
+
+
 async def get_approved_requests_for_month(
     session: AsyncSession, year: int, month: int
 ) -> list[tuple[TimeOffRequest, User]]:

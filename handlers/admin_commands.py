@@ -4,58 +4,42 @@ import logging
 from datetime import date
 
 from aiogram import Router, F, Bot
-from aiogram.types import Message, CallbackQuery, BufferedInputFile, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, BufferedInputFile
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
 
 from handlers.admin_request import IsAdmin
 from database.engine import AsyncSessionFactory
-from database.crud import (get_approved_requests_for_month, get_pending_requests,
-                           get_user_by_tg_id, get_all_approved_requests)
-from database.models import User, UserRole, RequestStatus, RequestType
+from database.crud import (get_approved_requests_for_month, get_approved_requests_for_period,
+                           get_pending_requests, get_user_by_tg_id, get_all_approved_requests,
+                           add_overtime_hours, deduct_overtime_hours, add_balance_log)
+from database.models import User, UserRole, RequestStatus, RequestType, TimeOffRequest
 from keyboards.menus import admin_main_menu
-from keyboards.request_kb import admin_request_keyboard, revoke_request_keyboard, RequestRevokeCallback
+from keyboards.request_kb import (admin_request_keyboard, revoke_request_keyboard,
+                                  RequestRevokeCallback, ReportPeriodCallback, report_period_keyboard)
 from sqlalchemy import select as sa_select
-from utils.formatters import format_request_period, format_request_duration
 from sqlalchemy import select
-from database.crud import add_overtime_hours, deduct_overtime_hours, add_balance_log
-from database.models import TimeOffRequest
+from utils.formatters import format_request_period, format_request_duration
+from states.request_states import ReportForm
 
 logger = logging.getLogger(__name__)
 router = Router()
 router.message.filter(IsAdmin())
 
 
-# ─── /report — CSV-отчёт за текущий месяц ────────────────────────────────────
 def _a(message: Message) -> str:
     u = message.from_user
     return f"[admin id={u.id} name={u.full_name!r}]"
 
 
-@router.message(Command("report"))
-async def cmd_report(message: Message):
-    logger.info("📊 /report | %s", _a(message))
-    today = date.today()
-
-    async with AsyncSessionFactory() as session:
-        rows = await get_approved_requests_for_month(session, today.year, today.month)
-
-    month_names_prep = [
-        "", "январе", "феврале", "марте", "апреле", "мае", "июне",
-        "июле", "августе", "сентябре", "октябре", "ноябре", "декабре",
-    ]
-    month_names_gen = [
-        "", "январь", "февраль", "март", "апрель", "май", "июнь",
-        "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
-    ]
+async def _send_report(target: Message, rows: list, start: date, end: date) -> None:
+    """Генерирует и отправляет CSV-отчёт за указанный период."""
+    period_str = f"{start.strftime('%d.%m.%Y')}–{end.strftime('%d.%m.%Y')}"
 
     if not rows:
-        await message.answer(
-            f"📭 В {month_names_prep[today.month]} нет одобренных заявок.",
-            reply_markup=admin_main_menu(),
-        )
+        await target.answer(f"📭 За период {period_str} нет одобренных заявок.")
         return
 
-    # ── Генерация CSV в памяти ────────────────────────────────────────────────
     output = io.StringIO()
     writer = csv.writer(output, delimiter=";", quoting=csv.QUOTE_ALL)
     writer.writerow([
@@ -63,35 +47,109 @@ async def cmd_report(message: Message):
         "Тип", "Дата начала", "Дата окончания", "Дней", "Часов",
         "Причина", "Комментарий администратора",
     ])
-
     for idx, (req, user) in enumerate(rows, start=1):
         days = (req.end_date - req.start_date).days + 1 if not req.hours else "—"
         writer.writerow([
-            idx,
-            user.full_name,
-            user.tg_id,
-            req.type.value,
-            req.start_date.strftime("%d.%m.%Y"),
-            req.end_date.strftime("%d.%m.%Y"),
-            days,
-            f"{req.hours:.1f}" if req.hours else "—",
-            req.reason or "—",
-            req.admin_comment or "—",
+            idx, user.full_name, user.tg_id, req.type.value,
+            req.start_date.strftime("%d.%m.%Y"), req.end_date.strftime("%d.%m.%Y"),
+            days, f"{req.hours:.1f}" if req.hours else "—",
+            req.reason or "—", req.admin_comment or "—",
         ])
 
-    # BOM для корректного открытия в Excel
     csv_bytes = ("\ufeff" + output.getvalue()).encode("utf-8")
-    filename = f"report_{month_names_gen[today.month]}_{today.year}.csv"
+    filename = f"report_{start.strftime('%d.%m.%Y')}-{end.strftime('%d.%m.%Y')}.csv"
 
-    logger.info("   сгенерирован отчёт: %d заявок, файл=%s | %s", len(rows), filename, _a(message))
-    await message.answer_document(
+    await target.answer_document(
         document=BufferedInputFile(csv_bytes, filename=filename),
         caption=(
-            f"📊 <b>Отчёт за {month_names_gen[today.month]} {today.year}</b>\n"
+            f"📊 <b>Отчёт за {period_str}</b>\n"
             f"Одобренных заявок: <b>{len(rows)}</b>"
         ),
         parse_mode="HTML",
     )
+
+
+# ─── Кнопка «📊 Отчёт» ────────────────────────────────────────────────────────
+@router.message(F.text == "📊 Отчёт")
+async def cmd_report_menu(message: Message, state: FSMContext):
+    logger.info("📊 Отчёт | %s", _a(message))
+    await state.clear()
+    await message.answer(
+        "📊 <b>Отчёт по заявкам</b>\n\nВыберите период:",
+        reply_markup=report_period_keyboard(),
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(ReportPeriodCallback.filter(F.period == "current"))
+async def report_current_month(call: CallbackQuery):
+    today = date.today()
+    start = date(today.year, today.month, 1)
+    import calendar as cal
+    end = date(today.year, today.month, cal.monthrange(today.year, today.month)[1])
+    logger.info("📊 Отчёт: текущий месяц %s–%s | admin id=%d", start, end, call.from_user.id)
+    async with AsyncSessionFactory() as session:
+        rows = await get_approved_requests_for_period(session, start, end)
+    await call.message.delete()
+    await _send_report(call.message, rows, start, end)
+    await call.answer()
+
+
+@router.callback_query(ReportPeriodCallback.filter(F.period == "previous"))
+async def report_previous_month(call: CallbackQuery):
+    today = date.today()
+    import calendar as cal
+    prev_month = today.month - 1 or 12
+    prev_year = today.year if today.month > 1 else today.year - 1
+    start = date(prev_year, prev_month, 1)
+    end = date(prev_year, prev_month, cal.monthrange(prev_year, prev_month)[1])
+    logger.info("📊 Отчёт: прошлый месяц %s–%s | admin id=%d", start, end, call.from_user.id)
+    async with AsyncSessionFactory() as session:
+        rows = await get_approved_requests_for_period(session, start, end)
+    await call.message.delete()
+    await _send_report(call.message, rows, start, end)
+    await call.answer()
+
+
+@router.callback_query(ReportPeriodCallback.filter(F.period == "custom"))
+async def report_custom_ask(call: CallbackQuery, state: FSMContext):
+    logger.info("📊 Отчёт: произвольный период | admin id=%d", call.from_user.id)
+    await state.set_state(ReportForm.entering_period)
+    await call.message.edit_text(
+        "✏️ Введите период в формате:\n"
+        "<code>ДД.ММ.ГГГГ-ДД.ММ.ГГГГ</code>\n\n"
+        "<i>Например: 01.03.2026-31.03.2026</i>",
+        parse_mode="HTML",
+    )
+    await call.answer()
+
+
+@router.message(ReportForm.entering_period)
+async def report_custom_generate(message: Message, state: FSMContext):
+    text = message.text.strip().replace(" ", "")
+    try:
+        parts = text.split("-")
+        # формат ДД.ММ.ГГГГ содержит точки, поэтому split по "-" даст 2 части
+        # но ДД.ММ.ГГГГ-ДД.ММ.ГГГГ → split("-") даст ["ДД.ММ.ГГГГ", "ДД.ММ.ГГГГ"]
+        if len(parts) != 2:
+            raise ValueError
+        start = date(int(parts[0][6:10]), int(parts[0][3:5]), int(parts[0][0:2]))
+        end   = date(int(parts[1][6:10]), int(parts[1][3:5]), int(parts[1][0:2]))
+        if end < start:
+            raise ValueError
+    except (ValueError, IndexError):
+        await message.answer(
+            "⚠️ Неверный формат. Введите период как:\n"
+            "<code>01.03.2026-31.03.2026</code>",
+            parse_mode="HTML",
+        )
+        return
+
+    await state.clear()
+    logger.info("📊 Отчёт: период %s–%s | admin id=%d", start, end, message.from_user.id)
+    async with AsyncSessionFactory() as session:
+        rows = await get_approved_requests_for_period(session, start, end)
+    await _send_report(message, rows, start, end)
 
 
 # ─── Список новых заявок ─────────────────────────────────────────────────────
