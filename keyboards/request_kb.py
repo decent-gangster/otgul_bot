@@ -56,6 +56,10 @@ def request_type_keyboard() -> InlineKeyboardMarkup:
             text="🏥 Больничный",
             callback_data=RequestTypeCallback(type_value="больничный").pack()
         )],
+        [InlineKeyboardButton(
+            text="🎂 День рождения",
+            callback_data=RequestTypeCallback(type_value="день рождения").pack()
+        )],
     ])
 
 

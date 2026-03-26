@@ -12,6 +12,7 @@ from utils.scheduler import setup_scheduler
 from utils.logger import setup_logging
 
 from handlers import (
+    onboarding,
     user_commands,
     user_request,
     admin_commands,
@@ -37,6 +38,7 @@ async def main() -> None:
     dp.workflow_data["group_id"]  = config.group_id
 
     # ── Роутеры (порядок важен: admin-фильтры регистрируются раньше user) ────
+    dp.include_router(onboarding.router)       # онбординг (ФИО + дата рождения)
     dp.include_router(admin_commands.router)   # /report и прочие команды админа
     dp.include_router(admin_request.router)    # одобрить / отклонить заявку
     dp.include_router(user_commands.router)    # /start, /balance, «Мой баланс»

@@ -1,9 +1,16 @@
 from aiogram.fsm.state import State, StatesGroup
 
 
+class OnboardingForm(StatesGroup):
+    """Состояния для первичной регистрации сотрудника."""
+    entering_name = State()        # ввод ФИО
+    entering_birth_date = State()  # ввод даты рождения
+
+
 class RequestForm(StatesGroup):
     """Состояния для подачи заявки на отгул/отпуск/больничный."""
-    choosing_type = State()        # выбор типа заявки
+    choosing_type = State()           # выбор типа заявки
+    choosing_otgul_type = State()     # за свой счёт или с содержанием
     choosing_hours_or_days = State()  # только для отгула: полный день или по часам
     choosing_time_from = State()   # выбор времени начала отгула по часам
     choosing_time_to = State()     # выбор времени окончания отгула по часам

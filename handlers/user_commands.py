@@ -3,6 +3,7 @@ import logging
 from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
 from datetime import date
 
 from keyboards.menus import user_main_menu, admin_main_menu
@@ -29,10 +30,21 @@ def _u(message: Message) -> str:
 
 
 @router.message(Command("start"))
-async def cmd_start(message: Message, admin_ids: list[int]):
+async def cmd_start(message: Message, state: FSMContext, admin_ids: list[int]):
+    from states.request_states import OnboardingForm
     logger.info("▶ /start | пользователь %s", _u(message))
     async with AsyncSessionFactory() as session:
         user = await get_or_create_user(session, message.from_user.id, message.from_user.full_name)
+
+    if not user.birth_date:
+        await state.set_state(OnboardingForm.entering_name)
+        await message.answer(
+            "👋 <b>Добро пожаловать!</b>\n\n"
+            "Для начала работы введите ваше <b>ФИО</b> полностью:\n"
+            "<i>Например: Иванов Иван Иванович</i>",
+            parse_mode="HTML",
+        )
+        return
 
     is_admin = message.from_user.id in admin_ids or user.role == UserRole.admin
     if is_admin:

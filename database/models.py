@@ -18,6 +18,7 @@ class RequestType(str, enum.Enum):
     vacation = "отпуск"
     sick = "больничный"
     overtime = "переработка"
+    birthday = "день рождения"
 
 
 class RequestStatus(str, enum.Enum):
@@ -36,6 +37,7 @@ class User(Base):
     role = Column(Enum(UserRole), default=UserRole.user, nullable=False)
     vacation_balance = Column(Float, default=0.0, nullable=False)
     overtime_hours = Column(Float, default=0.0, nullable=False)
+    birth_date = Column(Date, nullable=True)
 
     requests = relationship("TimeOffRequest", back_populates="user", cascade="all, delete-orphan")
 

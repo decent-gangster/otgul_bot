@@ -15,7 +15,7 @@ from keyboards.request_kb import (
 )
 from keyboards.menus import user_main_menu
 from database.engine import AsyncSessionFactory
-from database.crud import get_or_create_user, create_request, has_overtime_on_date
+from database.crud import get_or_create_user, create_request, has_overtime_on_date, has_birthday_request_this_year
 from database.models import RequestType
 
 logger = logging.getLogger(__name__)
@@ -34,6 +34,7 @@ REQUEST_TYPE_LABELS = {
     "отгул (с содержанием)": "🗓 Отгул (с содержанием)",
     "отпуск": "🌴 Отпуск",
     "больничный": "🏥 Больничный",
+    "день рождения": "🎂 День рождения",
 }
 
 
@@ -74,6 +75,45 @@ async def choose_type(call: CallbackQuery, callback_data: RequestTypeCallback, s
             "✅ Тип: <b>🗓 Отгул</b>\n\n"
             "📌 <b>Выберите вид отгула:</b>",
             reply_markup=otgul_type_keyboard(),
+            parse_mode="HTML",
+        )
+    elif req_type == "день рождения":
+        today = date.today()
+        async with AsyncSessionFactory() as session:
+            user = await get_or_create_user(session, call.from_user.id, call.from_user.full_name)
+            already_used = await has_birthday_request_this_year(session, user.id, today.year)
+
+        if not user.birth_date:
+            await call.answer("⚠️ Дата рождения не указана. Пройдите регистрацию через /start.", show_alert=True)
+            return
+
+        birthday_this_year = date(today.year, user.birth_date.month, user.birth_date.day)
+
+        if birthday_this_year < today:
+            await call.answer("⚠️ Ваш день рождения в этом году уже прошёл.", show_alert=True)
+            return
+        if birthday_this_year.weekday() >= 5:
+            day_names = ["понедельник", "вторник", "среду", "четверг", "пятницу", "субботу", "воскресенье"]
+            await call.answer(
+                f"⚠️ Ваш день рождения выпадает на {day_names[birthday_this_year.weekday()]}. Отгул недоступен.",
+                show_alert=True,
+            )
+            return
+        if already_used:
+            await call.answer("⚠️ Вы уже использовали отгул на день рождения в этом году.", show_alert=True)
+            return
+
+        await state.update_data(
+            request_type="день рождения",
+            start_date=birthday_this_year.isoformat(),
+            end_date=birthday_this_year.isoformat(),
+            hours=None,
+        )
+        await state.set_state(RequestForm.entering_reason)
+        await call.message.edit_text(
+            f"🎂 <b>Отгул на день рождения</b>\n\n"
+            f"📅 Дата: <b>{birthday_this_year.strftime('%d.%m.%Y')}</b>\n\n"
+            f"✏️ <b>Укажите причину</b> (или напишите «—»):",
             parse_mode="HTML",
         )
     else:
@@ -358,7 +398,7 @@ async def confirm_request(call: CallbackQuery, state: FSMContext, bot: Bot, admi
     # ── Уведомление администраторам ──────────────────────────────────────────
     admin_text = (
         f"📬 <b>Новая заявка #{req.id}</b>\n\n"
-        f"👤 Сотрудник: <b>{call.from_user.full_name}</b> (ID: {call.from_user.id})\n"
+        f"👤 Сотрудник: <b>{user.full_name}</b> (ID: {call.from_user.id})\n"
         f"📋 Тип: <b>{type_label}</b>\n"
         f"📅 Дата: <b>{start.strftime('%d.%m.%Y')}"
     )
@@ -509,7 +549,7 @@ async def overtime_confirm(call: CallbackQuery, state: FSMContext, bot: Bot, adm
 
     admin_text = (
         f"🕐 <b>Переработка #{req.id}</b>\n\n"
-        f"👤 Сотрудник: <b>{call.from_user.full_name}</b> (ID: {call.from_user.id})\n"
+        f"👤 Сотрудник: <b>{user.full_name}</b> (ID: {call.from_user.id})\n"
         f"📅 Дата: <b>{chosen.strftime('%d.%m.%Y')}</b>\n"
         f"⏱ Длительность: <b>{h_str} ч.</b>\n"
         f"💬 Причина: <b>{data['overtime_reason']}</b>"

@@ -26,8 +26,8 @@ async def get_or_create_user(session: AsyncSession, tg_id: int, full_name: str) 
     user = await get_user_by_tg_id(session, tg_id)
     if not user:
         user = await create_user(session, tg_id, full_name)
-    elif user.full_name != full_name:
-        # Обновляем имя, если пользователь его изменил в Telegram
+    elif user.full_name != full_name and not user.birth_date:
+        # Обновляем имя из Telegram только до прохождения онбординга
         user.full_name = full_name
         await session.commit()
     return user
@@ -118,6 +118,22 @@ async def update_request_status(
         if debt_hours is not None:
             req.debt_hours = debt_hours
         await session.commit()
+
+
+async def has_birthday_request_this_year(session: AsyncSession, user_id: int, year: int) -> bool:
+    """Проверяет, есть ли у пользователя заявка на день рождения в текущем году."""
+    result = await session.execute(
+        select(TimeOffRequest).where(
+            and_(
+                TimeOffRequest.user_id == user_id,
+                TimeOffRequest.type == RequestType.birthday,
+                TimeOffRequest.start_date >= date(year, 1, 1),
+                TimeOffRequest.start_date <= date(year, 12, 31),
+                TimeOffRequest.status.in_([RequestStatus.pending, RequestStatus.approved]),
+            )
+        )
+    )
+    return result.scalar_one_or_none() is not None
 
 
 async def get_awaiting_work_requests(session: AsyncSession, user_id: int) -> list[TimeOffRequest]:
