@@ -20,6 +20,7 @@ STATUS_LABELS = {
     RequestStatus.approved:      "✅ Одобрена",
     RequestStatus.rejected:      "❌ Отклонена",
     RequestStatus.awaiting_work: "🔄 Ожидает отработки",
+    RequestStatus.revoked:       "🔄 Отозвана",
 }
 
 

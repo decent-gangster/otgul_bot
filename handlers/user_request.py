@@ -15,7 +15,7 @@ from keyboards.request_kb import (
 )
 from keyboards.menus import user_main_menu
 from database.engine import AsyncSessionFactory
-from database.crud import get_or_create_user, create_request, has_overtime_on_date, has_birthday_request_this_year
+from database.crud import get_or_create_user, create_request, has_overtime_on_date, has_birthday_request_this_year, has_overlapping_request
 from database.models import RequestType
 
 logger = logging.getLogger(__name__)
@@ -241,6 +241,13 @@ async def choose_start_date(call: CallbackQuery, callback_data: CalendarCallback
         return
     if chosen.weekday() >= 5:
         await call.answer("⚠️ Нельзя брать отгул в выходной день!", show_alert=True)
+        return
+
+    async with AsyncSessionFactory() as session:
+        user = await get_or_create_user(session, call.from_user.id, call.from_user.full_name)
+        overlap = await has_overlapping_request(session, user.id, chosen)
+    if overlap:
+        await call.answer("⚠️ У вас уже есть заявка на эту дату!", show_alert=True)
         return
 
     data = await state.get_data()

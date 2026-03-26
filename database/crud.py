@@ -120,6 +120,38 @@ async def update_request_status(
         await session.commit()
 
 
+async def has_overlapping_request(session: AsyncSession, user_id: int, check_date: date) -> bool:
+    """Проверяет, есть ли у пользователя pending/approved заявка на указанную дату."""
+    result = await session.execute(
+        select(TimeOffRequest).where(
+            and_(
+                TimeOffRequest.user_id == user_id,
+                TimeOffRequest.type != RequestType.overtime,
+                TimeOffRequest.start_date <= check_date,
+                TimeOffRequest.end_date >= check_date,
+                TimeOffRequest.status.in_([RequestStatus.pending, RequestStatus.approved, RequestStatus.awaiting_work]),
+            )
+        )
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def get_all_approved_requests(session: AsyncSession) -> list[tuple]:
+    """Возвращает все одобренные заявки (не переработки) со связанными пользователями."""
+    result = await session.execute(
+        select(TimeOffRequest, User)
+        .join(User, TimeOffRequest.user_id == User.id)
+        .where(
+            and_(
+                TimeOffRequest.status.in_([RequestStatus.approved, RequestStatus.awaiting_work]),
+                TimeOffRequest.type != RequestType.overtime,
+            )
+        )
+        .order_by(TimeOffRequest.start_date.desc())
+    )
+    return result.all()
+
+
 async def has_birthday_request_this_year(session: AsyncSession, user_id: int, year: int) -> bool:
     """Проверяет, есть ли у пользователя заявка на день рождения в текущем году."""
     result = await session.execute(

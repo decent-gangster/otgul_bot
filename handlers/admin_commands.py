@@ -3,18 +3,22 @@ import io
 import logging
 from datetime import date
 
-from aiogram import Router, F
-from aiogram.types import Message, BufferedInputFile, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram import Router, F, Bot
+from aiogram.types import Message, CallbackQuery, BufferedInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 
 from handlers.admin_request import IsAdmin
 from database.engine import AsyncSessionFactory
-from database.crud import get_approved_requests_for_month, get_pending_requests, get_user_by_tg_id
-from database.models import User, UserRole
+from database.crud import (get_approved_requests_for_month, get_pending_requests,
+                           get_user_by_tg_id, get_all_approved_requests)
+from database.models import User, UserRole, RequestStatus, RequestType
 from keyboards.menus import admin_main_menu
-from keyboards.request_kb import admin_request_keyboard
+from keyboards.request_kb import admin_request_keyboard, revoke_request_keyboard, RequestRevokeCallback
+from sqlalchemy import select as sa_select
 from utils.formatters import format_request_period, format_request_duration
 from sqlalchemy import select
+from database.crud import add_overtime_hours, deduct_overtime_hours
+from database.models import TimeOffRequest
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -208,3 +212,87 @@ async def cmd_remove_admin(message: Message):
         f"✅ Права администратора у <b>{user.full_name}</b> сняты.",
         parse_mode="HTML",
     )
+
+
+# ─── Одобренные заявки ────────────────────────────────────────────────────────
+@router.message(F.text == "✅ Одобренные заявки")
+async def cmd_approved_requests(message: Message):
+    logger.info("✅ Одобренные заявки | %s", _a(message))
+    async with AsyncSessionFactory() as session:
+        rows = await get_all_approved_requests(session)
+
+    if not rows:
+        await message.answer("📭 Одобренных заявок нет.", reply_markup=admin_main_menu())
+        return
+
+    await message.answer(f"✅ <b>Одобренные заявки ({len(rows)}):</b>\n\nНажмите «Отозвать» для отмены:", parse_mode="HTML")
+    for req, user in rows:
+        period = format_request_period(req)
+        duration = format_request_duration(req)
+        status_label = "🔄 Ожидает отработки" if req.status.value == "awaiting_work" else "✅ Одобрена"
+        text = (
+            f"📋 <b>Заявка #{req.id}</b>\n"
+            f"👤 {user.full_name}\n"
+            f"🗂 {req.type.value} | {period} ({duration})\n"
+            f"💬 {req.reason or '—'}\n"
+            f"Статус: {status_label}"
+        )
+        await message.answer(text, reply_markup=revoke_request_keyboard(req.id), parse_mode="HTML")
+
+
+# ─── Отозвать заявку ──────────────────────────────────────────────────────────
+@router.callback_query(RequestRevokeCallback.filter())
+async def revoke_request(call: CallbackQuery, callback_data: RequestRevokeCallback, bot: Bot):
+    request_id = callback_data.request_id
+    logger.info("🔄 Отозвать заявку #%d | admin id=%d", request_id, call.from_user.id)
+
+    async with AsyncSessionFactory() as session:
+        result = await session.execute(
+            sa_select(TimeOffRequest, User)
+            .join(User, TimeOffRequest.user_id == User.id)
+            .where(TimeOffRequest.id == request_id)
+        )
+        row = result.one_or_none()
+        if not row:
+            await call.answer("⚠️ Заявка не найдена!", show_alert=True)
+            return
+
+        req, user = row
+
+        if req.status not in (RequestStatus.approved, RequestStatus.awaiting_work):
+            await call.answer("ℹ️ Заявка уже не активна.", show_alert=True)
+            return
+
+        # Обратное начисление/списание баланса
+        if req.type == RequestType.overtime and req.hours:
+            await deduct_overtime_hours(session, req.user_id, req.hours)
+            logger.info("   отнято %.1f ч. переработки у пользователя id=%d", req.hours, user.tg_id)
+        elif req.type == RequestType.otgul_paid and req.status == RequestStatus.approved:
+            hours_paid = req.hours if req.hours else ((req.end_date - req.start_date).days + 1) * 9
+            debt = req.debt_hours or 0
+            actually_deducted = hours_paid - debt
+            if actually_deducted > 0:
+                await add_overtime_hours(session, req.user_id, actually_deducted)
+                logger.info("   возвращено %.1f ч. переработки пользователю id=%d", actually_deducted, user.tg_id)
+
+        req.status = RequestStatus.revoked
+        await session.commit()
+
+    admin_name = f"@{call.from_user.username}" if call.from_user.username else call.from_user.full_name
+    await call.message.edit_text(
+        call.message.text + f"\n\n🔄 <b>Отозвано</b> администратором {admin_name}",
+        parse_mode="HTML",
+    )
+
+    try:
+        await bot.send_message(
+            user.tg_id,
+            f"🔄 <b>Ваша заявка #{req.id} была отозвана администратором.</b>\n\n"
+            f"📋 Тип: <b>{req.type.value}</b>\n"
+            f"📅 Период: <b>{format_request_period(req)}</b>",
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logger.warning("   не удалось уведомить пользователя id=%d: %s", user.tg_id, e)
+
+    await call.answer("✅ Заявка отозвана")

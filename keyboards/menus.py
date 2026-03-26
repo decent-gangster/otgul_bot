@@ -20,6 +20,7 @@ def admin_main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📬 Список новых заявок")],
+            [KeyboardButton(text="✅ Одобренные заявки")],
             [KeyboardButton(text="👥 Управление сотрудниками")],
             [KeyboardButton(text="📝 Подать заявку")],
             [KeyboardButton(text="🕐 Подать переработку")],
