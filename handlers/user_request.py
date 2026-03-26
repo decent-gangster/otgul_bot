@@ -199,6 +199,9 @@ async def choose_start_date(call: CallbackQuery, callback_data: CalendarCallback
         logger.warning("⚠ Попытка выбрать прошедшую дату %s | %s", chosen, _u(call))
         await call.answer("⚠️ Нельзя выбрать прошедшую дату!", show_alert=True)
         return
+    if chosen.weekday() >= 5:
+        await call.answer("⚠️ Нельзя брать отгул в выходной день!", show_alert=True)
+        return
 
     data = await state.get_data()
     logger.info("📝 шаг 4: дата начала=%s | %s", chosen, _u(call))
@@ -265,6 +268,9 @@ async def choose_end_date(call: CallbackQuery, callback_data: CalendarCallback, 
     if end < start:
         logger.warning("⚠ Дата конца %s < начала %s | %s", end, start, _u(call))
         await call.answer("⚠️ Дата окончания не может быть раньше даты начала!", show_alert=True)
+        return
+    if end.weekday() >= 5:
+        await call.answer("⚠️ Нельзя указывать выходной день как дату окончания!", show_alert=True)
         return
 
     days = (end - start).days + 1

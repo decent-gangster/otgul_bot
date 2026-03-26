@@ -54,11 +54,18 @@ def build_calendar(year: int = None, month: int = None) -> InlineKeyboardMarkup:
                 ))
             else:
                 current_date = date(year, month, day)
-                text = f"·{day}·" if current_date == today else str(day)
-                row.append(InlineKeyboardButton(
-                    text=text,
-                    callback_data=CalendarCallback(action="day", year=year, month=month, day=day).pack()
-                ))
+                is_weekend = current_date.weekday() >= 5  # 5=Сб, 6=Вс
+                if is_weekend:
+                    row.append(InlineKeyboardButton(
+                        text="—",
+                        callback_data=CalendarCallback(action="ignore", year=year, month=month, day=0).pack()
+                    ))
+                else:
+                    text = f"·{day}·" if current_date == today else str(day)
+                    row.append(InlineKeyboardButton(
+                        text=text,
+                        callback_data=CalendarCallback(action="day", year=year, month=month, day=day).pack()
+                    ))
         buttons.append(row)
 
     # ── Навигация: пред/след месяц ───────────────────────────────────────────
