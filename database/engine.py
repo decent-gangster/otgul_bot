@@ -47,6 +47,17 @@ async def init_db():
             await conn.execute(text("ALTER TABLE users ADD COLUMN birth_date DATE"))
         except Exception:
             pass
+        # Миграция v7: таблица истории баланса
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS balance_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                created_at TEXT NOT NULL,
+                change REAL NOT NULL,
+                description TEXT NOT NULL,
+                request_id INTEGER
+            )
+        """))
 
 
 async def get_session() -> AsyncSession:

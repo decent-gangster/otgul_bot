@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, BigInteger, String, Float, Date, Text, ForeignKey, Enum
-from sqlalchemy.orm import DeclarativeBase, relationship
+from sqlalchemy.orm import DeclarativeBase, relationship, backref
 import enum
 
 
@@ -67,3 +67,14 @@ class TimeOffRequest(Base):
 
     def __repr__(self):
         return f"<TimeOffRequest id={self.id} user_id={self.user_id} status={self.status}>"
+
+
+class BalanceLog(Base):
+    __tablename__ = "balance_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(String(16), nullable=False)   # "YYYY-MM-DD HH:MM"
+    change = Column(Float, nullable=False)            # >0 начислено, <0 списано
+    description = Column(String(255), nullable=False)
+    request_id = Column(Integer, nullable=True)       # связанная заявка (если есть)

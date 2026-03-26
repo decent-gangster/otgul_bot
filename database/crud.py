@@ -1,10 +1,13 @@
 import calendar as cal
-from datetime import date
+from datetime import date, datetime
 
+import pytz
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 
-from database.models import User, TimeOffRequest, UserRole, RequestStatus, RequestType
+from database.models import User, TimeOffRequest, UserRole, RequestStatus, RequestType, BalanceLog
+
+_BISHKEK = pytz.timezone("Asia/Bishkek")
 
 
 # ─── Пользователи ───────────────────────────────────────────────────────────
@@ -56,6 +59,35 @@ async def deduct_overtime_hours(session: AsyncSession, user_id: int, hours: floa
     if user:
         user.overtime_hours = max(0.0, (user.overtime_hours or 0) - hours)
         await session.commit()
+
+
+async def add_balance_log(
+    session: AsyncSession,
+    user_id: int,
+    change: float,
+    description: str,
+    request_id: int = None,
+) -> None:
+    """Добавляет запись в историю баланса. Не коммитит — вызывающий сам делает commit."""
+    now = datetime.now(_BISHKEK).strftime("%Y-%m-%d %H:%M")
+    session.add(BalanceLog(
+        user_id=user_id,
+        created_at=now,
+        change=change,
+        description=description,
+        request_id=request_id,
+    ))
+
+
+async def get_balance_log(session: AsyncSession, user_id: int, limit: int = 20) -> list[BalanceLog]:
+    """Возвращает последние записи истории баланса пользователя."""
+    result = await session.execute(
+        select(BalanceLog)
+        .where(BalanceLog.user_id == user_id)
+        .order_by(BalanceLog.id.desc())
+        .limit(limit)
+    )
+    return result.scalars().all()
 
 
 async def has_overtime_on_date(session: AsyncSession, user_id: int, target_date: date) -> bool:

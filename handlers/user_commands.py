@@ -9,7 +9,7 @@ from datetime import date
 from keyboards.menus import user_main_menu, admin_main_menu
 from keyboards.request_kb import cancel_own_request_keyboard, cancel_confirm_keyboard, RequestCancelCallback, RequestCancelConfirmCallback, RequestCancelBackCallback
 from database.engine import AsyncSessionFactory
-from database.crud import get_or_create_user, get_user_month_days, get_requests_by_user, get_awaiting_work_requests
+from database.crud import get_or_create_user, get_user_month_days, get_requests_by_user, get_awaiting_work_requests, get_balance_log
 from database.models import UserRole, RequestStatus, RequestType, TimeOffRequest
 from utils.formatters import format_request_period, format_request_duration
 from sqlalchemy import select
@@ -165,6 +165,40 @@ async def cmd_my_requests(message: Message):
         )
         kb = cancel_own_request_keyboard(req.id) if req.status == RequestStatus.pending else None
         await message.answer(text, reply_markup=kb, parse_mode="HTML")
+
+
+# ─── История баланса ─────────────────────────────────────────────────────────
+@router.message(F.text == "📊 История баланса")
+async def cmd_balance_log(message: Message):
+    logger.info("📊 История баланса | %s", _u(message))
+    async with AsyncSessionFactory() as session:
+        user = await get_or_create_user(session, message.from_user.id, message.from_user.full_name)
+        log = await get_balance_log(session, user.id)
+
+    if not log:
+        await message.answer(
+            "📊 <b>История баланса</b>\n\nОпераций пока нет.",
+            parse_mode="HTML",
+        )
+        return
+
+    lines = []
+    for entry in log:
+        if entry.change > 0:
+            icon, sign = "📈", "+"
+        else:
+            icon, sign = "📉", ""
+        h = entry.change
+        h_str = f"{h:.0f}" if h == int(h) else f"{h:.1f}"
+        lines.append(
+            f"{icon} <b>{sign}{h_str} ч.</b> — {entry.description}\n"
+            f"   🕐 {entry.created_at}"
+        )
+
+    await message.answer(
+        f"📊 <b>История баланса</b> (последние {len(log)} операций):\n\n" + "\n\n".join(lines),
+        parse_mode="HTML",
+    )
 
 
 # ─── Отмена своей заявки (шаг 1: подтверждение) ──────────────────────────────

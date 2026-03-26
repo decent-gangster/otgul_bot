@@ -10,7 +10,7 @@ from states.request_states import AdminReviewForm
 from keyboards.request_kb import RequestActionCallback
 from keyboards.menus import admin_main_menu
 from database.engine import AsyncSessionFactory
-from database.crud import update_request_status, add_overtime_hours, deduct_overtime_hours, apply_overtime_to_debts
+from database.crud import update_request_status, add_overtime_hours, deduct_overtime_hours, apply_overtime_to_debts, add_balance_log
 from database.models import TimeOffRequest, User, RequestStatus, RequestType
 from utils.formatters import format_request_period, format_request_duration
 
@@ -76,8 +76,13 @@ async def approve_request(
             leftover, closed_ids = await apply_overtime_to_debts(session, req.user_id, req.hours)
             if leftover > 0:
                 await add_overtime_hours(session, req.user_id, leftover)
+                await add_balance_log(session, req.user_id, +leftover,
+                    f"Переработка одобрена (заявка #{req.id})", req.id)
             if closed_ids:
                 ids_str = ", ".join(f"#{i}" for i in closed_ids)
+                hours_for_debts = req.hours - leftover
+                await add_balance_log(session, req.user_id, -hours_for_debts,
+                    f"Зачтено в счёт долга (заявки {ids_str})", req.id)
                 overtime_note = f"\n✅ Долг по отработке закрыт (заявки {ids_str})."
                 logger.info("   закрыты долги %s у пользователя id=%d", ids_str, user.tg_id)
             logger.info("   начислено %.1f ч. переработки (в баланс %.1f ч.) пользователю id=%d",
@@ -89,6 +94,8 @@ async def approve_request(
 
             if balance >= total_needed:
                 await deduct_overtime_hours(session, req.user_id, total_needed)
+                await add_balance_log(session, req.user_id, -total_needed,
+                    f"Отгул с отработкой одобрен (заявка #{req.id})", req.id)
                 overtime_note = f"\n💳 Списано с баланса переработки: {total_needed:.1f} ч."
                 logger.info("   списано %.1f ч. с баланса у пользователя id=%d", total_needed, user.tg_id)
             else:
@@ -96,6 +103,8 @@ async def approve_request(
                 remaining = round(total_needed - deducted, 2)
                 if deducted > 0:
                     await deduct_overtime_hours(session, req.user_id, deducted)
+                    await add_balance_log(session, req.user_id, -deducted,
+                        f"Отгул с отработкой, частично (заявка #{req.id})", req.id)
                 final_status = RequestStatus.awaiting_work
                 debt_hours = remaining
                 if deducted > 0:

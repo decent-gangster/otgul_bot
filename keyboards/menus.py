@@ -9,6 +9,7 @@ def user_main_menu() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="🕐 Подать переработку")],
             [KeyboardButton(text="📋 Мои заявки")],
             [KeyboardButton(text="💰 Мой баланс")],
+            [KeyboardButton(text="📊 История баланса")],
         ],
         resize_keyboard=True,
         input_field_placeholder="Выберите действие..."
@@ -25,6 +26,7 @@ def admin_main_menu() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="📝 Подать заявку")],
             [KeyboardButton(text="🕐 Подать переработку")],
             [KeyboardButton(text="💰 Мой баланс")],
+            [KeyboardButton(text="📊 История баланса")],
         ],
         resize_keyboard=True,
         input_field_placeholder="Выберите действие..."

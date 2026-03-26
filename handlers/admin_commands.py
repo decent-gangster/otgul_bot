@@ -17,7 +17,7 @@ from keyboards.request_kb import admin_request_keyboard, revoke_request_keyboard
 from sqlalchemy import select as sa_select
 from utils.formatters import format_request_period, format_request_duration
 from sqlalchemy import select
-from database.crud import add_overtime_hours, deduct_overtime_hours
+from database.crud import add_overtime_hours, deduct_overtime_hours, add_balance_log
 from database.models import TimeOffRequest
 
 logger = logging.getLogger(__name__)
@@ -266,6 +266,8 @@ async def revoke_request(call: CallbackQuery, callback_data: RequestRevokeCallba
         # Обратное начисление/списание баланса
         if req.type == RequestType.overtime and req.hours:
             await deduct_overtime_hours(session, req.user_id, req.hours)
+            await add_balance_log(session, req.user_id, -req.hours,
+                f"Переработка отозвана (заявка #{req.id})", req.id)
             logger.info("   отнято %.1f ч. переработки у пользователя id=%d", req.hours, user.tg_id)
         elif req.type == RequestType.otgul_paid and req.status == RequestStatus.approved:
             hours_paid = req.hours if req.hours else ((req.end_date - req.start_date).days + 1) * 9
@@ -273,6 +275,8 @@ async def revoke_request(call: CallbackQuery, callback_data: RequestRevokeCallba
             actually_deducted = hours_paid - debt
             if actually_deducted > 0:
                 await add_overtime_hours(session, req.user_id, actually_deducted)
+                await add_balance_log(session, req.user_id, +actually_deducted,
+                    f"Отгул с отработкой отозван (заявка #{req.id})", req.id)
                 logger.info("   возвращено %.1f ч. переработки пользователю id=%d", actually_deducted, user.tg_id)
 
         req.status = RequestStatus.revoked
