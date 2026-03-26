@@ -216,7 +216,7 @@ async def choose_start_date(call: CallbackQuery, callback_data: CalendarCallback
         await call.message.edit_text(
             f"✅ Дата: <b>{chosen.strftime('%d.%m.%Y')}</b>\n\n"
             f"🕐 <b>Выберите время начала:</b>",
-            reply_markup=time_keyboard(after=min_raw),
+            reply_markup=time_keyboard(after=min_raw, before="1730"),
             parse_mode="HTML",
         )
     else:

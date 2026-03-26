@@ -30,9 +30,9 @@ def fmt_time(raw: str) -> str:
     return f"{raw[:2]}:{raw[2:]}"
 
 
-def time_keyboard(after: str = None) -> InlineKeyboardMarkup:
-    """Клавиатура выбора времени. after — 'HHMM', показываем только слоты позже него."""
-    slots = [t for t in TIME_SLOTS if after is None or t > after]
+def time_keyboard(after: str = None, before: str = None) -> InlineKeyboardMarkup:
+    """Клавиатура выбора времени. after — 'HHMM', показываем только слоты позже него. before — строго меньше."""
+    slots = [t for t in TIME_SLOTS if (after is None or t > after) and (before is None or t < before)]
     buttons = [
         InlineKeyboardButton(text=fmt_time(t), callback_data=TimeCallback(value=t).pack())
         for t in slots
