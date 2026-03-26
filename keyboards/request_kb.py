@@ -31,6 +31,10 @@ class ReportPeriodCallback(CallbackData, prefix="report"):
     period: str  # "current", "previous", "custom"
 
 
+class WeekNavCallback(CallbackData, prefix="week"):
+    offset: int  # смещение в днях от понедельника текущей недели
+
+
 class TimeCallback(CallbackData, prefix="time_pick"):
     value: str  # "0800" — без двоеточия, оно запрещено в CallbackData
 
@@ -107,6 +111,14 @@ def confirm_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_request"),
         ]
     ])
+
+
+def week_nav_keyboard(offset: int) -> InlineKeyboardMarkup:
+    """Кнопки навигации по неделям для календаря отсутствий."""
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="◀️ Пред. неделя", callback_data=WeekNavCallback(offset=offset - 7).pack()),
+        InlineKeyboardButton(text="След. неделя ▶️", callback_data=WeekNavCallback(offset=offset + 7).pack()),
+    ]])
 
 
 def report_period_keyboard() -> InlineKeyboardMarkup:

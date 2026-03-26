@@ -4,12 +4,15 @@ from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from datetime import date
+from datetime import date, timedelta
 
 from keyboards.menus import user_main_menu, admin_main_menu
-from keyboards.request_kb import cancel_own_request_keyboard, cancel_confirm_keyboard, RequestCancelCallback, RequestCancelConfirmCallback, RequestCancelBackCallback
+from keyboards.request_kb import (cancel_own_request_keyboard, cancel_confirm_keyboard,
+                                   RequestCancelCallback, RequestCancelConfirmCallback,
+                                   RequestCancelBackCallback, WeekNavCallback, week_nav_keyboard)
 from database.engine import AsyncSessionFactory
-from database.crud import get_or_create_user, get_user_month_days, get_requests_by_user, get_awaiting_work_requests, get_balance_log
+from database.crud import (get_or_create_user, get_user_month_days, get_requests_by_user,
+                           get_awaiting_work_requests, get_balance_log, get_absences_for_period)
 from database.models import UserRole, RequestStatus, RequestType, TimeOffRequest
 from utils.formatters import format_request_period, format_request_duration
 from sqlalchemy import select
@@ -165,6 +168,50 @@ async def cmd_my_requests(message: Message):
         )
         kb = cancel_own_request_keyboard(req.id) if req.status == RequestStatus.pending else None
         await message.answer(text, reply_markup=kb, parse_mode="HTML")
+
+
+# ─── Календарь отсутствий ────────────────────────────────────────────────────
+DAY_NAMES = ["Пн", "Вт", "Ср", "Чт", "Пт"]
+
+
+async def _build_week_text(offset: int) -> str:
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    week_start = monday + timedelta(days=offset)
+    week_end = week_start + timedelta(days=4)  # пятница
+
+    async with AsyncSessionFactory() as session:
+        rows = await get_absences_for_period(session, week_start, week_end)
+
+    lines = [f"📅 <b>Неделя {week_start.strftime('%d.%m')} — {week_end.strftime('%d.%m.%Y')}</b>\n"]
+    for i in range(5):
+        day = week_start + timedelta(days=i)
+        absents = [
+            f"{user.full_name} <i>({req.type.value})</i>"
+            for req, user in rows
+            if req.start_date <= day <= req.end_date
+        ]
+        day_str = day.strftime("%d.%m")
+        if absents:
+            lines.append(f"<b>{DAY_NAMES[i]} {day_str}:</b> {', '.join(absents)}")
+        else:
+            lines.append(f"<b>{DAY_NAMES[i]} {day_str}:</b> —")
+
+    return "\n".join(lines)
+
+
+@router.message(F.text == "📅 Календарь отсутствий")
+async def cmd_absence_calendar(message: Message):
+    logger.info("📅 Календарь отсутствий | %s", _u(message))
+    text = await _build_week_text(offset=0)
+    await message.answer(text, reply_markup=week_nav_keyboard(0), parse_mode="HTML")
+
+
+@router.callback_query(WeekNavCallback.filter())
+async def navigate_week(call: CallbackQuery, callback_data: WeekNavCallback):
+    text = await _build_week_text(offset=callback_data.offset)
+    await call.message.edit_text(text, reply_markup=week_nav_keyboard(callback_data.offset), parse_mode="HTML")
+    await call.answer()
 
 
 # ─── История баланса ─────────────────────────────────────────────────────────

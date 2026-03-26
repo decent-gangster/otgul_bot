@@ -247,6 +247,44 @@ async def apply_overtime_to_debts(session: AsyncSession, user_id: int, hours: fl
     return remaining, closed_ids
 
 
+async def get_absences_for_period(
+    session: AsyncSession, start: date, end: date
+) -> list[tuple[TimeOffRequest, User]]:
+    """Все одобренные заявки (не переработки), пересекающиеся с указанным периодом."""
+    result = await session.execute(
+        select(TimeOffRequest, User)
+        .join(User, TimeOffRequest.user_id == User.id)
+        .where(
+            and_(
+                TimeOffRequest.status.in_([RequestStatus.approved, RequestStatus.awaiting_work]),
+                TimeOffRequest.type != RequestType.overtime,
+                TimeOffRequest.start_date <= end,
+                TimeOffRequest.end_date >= start,
+            )
+        )
+        .order_by(User.full_name)
+    )
+    return result.all()
+
+
+async def get_requests_starting_on(
+    session: AsyncSession, target_date: date
+) -> list[tuple[TimeOffRequest, User]]:
+    """Заявки, которые начинаются в указанную дату (для напоминаний)."""
+    result = await session.execute(
+        select(TimeOffRequest, User)
+        .join(User, TimeOffRequest.user_id == User.id)
+        .where(
+            and_(
+                TimeOffRequest.status.in_([RequestStatus.approved, RequestStatus.awaiting_work]),
+                TimeOffRequest.type != RequestType.overtime,
+                TimeOffRequest.start_date == target_date,
+            )
+        )
+    )
+    return result.all()
+
+
 async def get_absent_today(session: AsyncSession) -> list[tuple[TimeOffRequest, User]]:
     """Возвращает одобренные заявки, покрывающие сегодняшний день."""
     today = date.today()
