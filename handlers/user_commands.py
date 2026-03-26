@@ -1,16 +1,18 @@
 import logging
 
-from aiogram import Router, F
-from aiogram.types import Message
+from aiogram import Router, F, Bot
+from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from datetime import date
 
 from keyboards.menus import user_main_menu, admin_main_menu
+from keyboards.request_kb import cancel_own_request_keyboard, cancel_confirm_keyboard, RequestCancelCallback, RequestCancelConfirmCallback, RequestCancelBackCallback
 from database.engine import AsyncSessionFactory
 from database.crud import get_or_create_user, get_user_month_days, get_requests_by_user, get_awaiting_work_requests
-from database.models import UserRole, RequestStatus, RequestType
+from database.models import UserRole, RequestStatus, RequestType, TimeOffRequest
 from utils.formatters import format_request_period, format_request_duration
+from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -21,6 +23,7 @@ STATUS_LABELS = {
     RequestStatus.rejected:      "❌ Отклонена",
     RequestStatus.awaiting_work: "🔄 Ожидает отработки",
     RequestStatus.revoked:       "🔄 Отозвана",
+    RequestStatus.cancelled:     "🚫 Отменена вами",
 }
 
 
@@ -147,19 +150,82 @@ async def cmd_my_requests(message: Message):
         await message.answer("У вас пока нет заявок. Нажмите «📝 Подать заявку».")
         return
 
-    lines = []
+    total = len(requests)
+    await message.answer(
+        f"📋 <b>Ваши заявки</b> (последние {min(total, 10)} из {total}):",
+        parse_mode="HTML",
+    )
     for req in requests[:10]:
         period = format_request_period(req)
         duration = format_request_duration(req)
         status = STATUS_LABELS.get(req.status, req.status)
-        lines.append(
+        text = (
             f"<b>#{req.id}</b> | {req.type.value} | {period} ({duration})\n"
             f"   {status}"
         )
+        kb = cancel_own_request_keyboard(req.id) if req.status == RequestStatus.pending else None
+        await message.answer(text, reply_markup=kb, parse_mode="HTML")
 
-    total = len(requests)
-    header = f"📋 <b>Ваши заявки</b> (последние {min(total, 10)} из {total}):\n\n"
-    await message.answer(header + "\n\n".join(lines), parse_mode="HTML")
+
+# ─── Отмена своей заявки (шаг 1: подтверждение) ──────────────────────────────
+@router.callback_query(RequestCancelCallback.filter())
+async def cancel_request_ask(call: CallbackQuery, callback_data: RequestCancelCallback):
+    request_id = callback_data.request_id
+    logger.info("❌ Запрос на отмену заявки #%d | %s", request_id, _u(call))
+    await call.message.edit_reply_markup(
+        reply_markup=cancel_confirm_keyboard(request_id)
+    )
+    await call.answer()
+
+
+# ─── Отмена своей заявки (шаг 2: подтверждено) ───────────────────────────────
+@router.callback_query(RequestCancelConfirmCallback.filter())
+async def cancel_request_confirm(call: CallbackQuery, callback_data: RequestCancelConfirmCallback, bot: Bot, admin_ids: list[int]):
+    request_id = callback_data.request_id
+    logger.info("❌ Подтверждена отмена заявки #%d | %s", request_id, _u(call))
+
+    async with AsyncSessionFactory() as session:
+        result = await session.execute(
+            select(TimeOffRequest).where(TimeOffRequest.id == request_id)
+        )
+        req = result.scalar_one_or_none()
+
+        if not req:
+            await call.answer("⚠️ Заявка не найдена!", show_alert=True)
+            return
+        if req.status != RequestStatus.pending:
+            await call.answer("ℹ️ Заявку уже нельзя отменить — она обработана.", show_alert=True)
+            return
+
+        req.status = RequestStatus.cancelled
+        await session.commit()
+
+    await call.message.edit_text(
+        call.message.text + "\n\n🚫 <b>Отменена вами</b>",
+        parse_mode="HTML",
+    )
+
+    for admin_id in admin_ids:
+        try:
+            await bot.send_message(
+                admin_id,
+                f"🚫 <b>Заявка #{request_id} отменена сотрудником</b>\n\n"
+                f"👤 {call.from_user.full_name}",
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            logger.warning("   не удалось уведомить админа id=%s: %s", admin_id, e)
+
+    await call.answer("Заявка отменена")
+
+
+# ─── Назад (вернуть кнопку «Отменить заявку») ────────────────────────────────
+@router.callback_query(RequestCancelBackCallback.filter())
+async def cancel_back(call: CallbackQuery, callback_data: RequestCancelBackCallback):
+    await call.message.edit_reply_markup(
+        reply_markup=cancel_own_request_keyboard(callback_data.request_id)
+    )
+    await call.answer()
 
 
 @router.message(F.text == "🔙 Назад")

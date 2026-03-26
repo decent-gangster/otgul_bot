@@ -15,6 +15,18 @@ class RequestRevokeCallback(CallbackData, prefix="req_revoke"):
     request_id: int
 
 
+class RequestCancelCallback(CallbackData, prefix="req_cancel"):
+    request_id: int
+
+
+class RequestCancelConfirmCallback(CallbackData, prefix="req_cancel_ok"):
+    request_id: int
+
+
+class RequestCancelBackCallback(CallbackData, prefix="req_cancel_back"):
+    request_id: int
+
+
 class TimeCallback(CallbackData, prefix="time_pick"):
     value: str  # "0800" — без двоеточия, оно запрещено в CallbackData
 
@@ -91,6 +103,27 @@ def confirm_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_request"),
         ]
     ])
+
+
+def cancel_own_request_keyboard(request_id: int) -> InlineKeyboardMarkup:
+    """Кнопка отмены заявки самим сотрудником (pending)."""
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text="❌ Отменить заявку",
+            callback_data=RequestCancelCallback(request_id=request_id).pack()
+        )
+    ]])
+
+
+def cancel_confirm_keyboard(request_id: int) -> InlineKeyboardMarkup:
+    """Подтверждение отмены заявки."""
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text="✅ Да, отменить",
+            callback_data=RequestCancelConfirmCallback(request_id=request_id).pack()
+        ),
+        InlineKeyboardButton(text="◀️ Назад", callback_data=RequestCancelBackCallback(request_id=request_id).pack()),
+    ]])
 
 
 def revoke_request_keyboard(request_id: int) -> InlineKeyboardMarkup:

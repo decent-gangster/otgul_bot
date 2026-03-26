@@ -27,6 +27,7 @@ class RequestStatus(str, enum.Enum):
     rejected = "rejected"
     awaiting_work = "awaiting_work"
     revoked = "revoked"
+    cancelled = "cancelled"
 
 
 class User(Base):
