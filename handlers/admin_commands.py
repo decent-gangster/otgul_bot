@@ -13,8 +13,7 @@ from database.engine import AsyncSessionFactory
 from database.crud import (get_approved_requests_for_month, get_approved_requests_for_period,
                            get_pending_requests, get_user_by_tg_id, get_all_approved_requests,
                            add_overtime_hours, deduct_overtime_hours, add_balance_log,
-                           get_all_users_balance_stats, get_monthly_type_stats, get_otgul_top,
-                           add_admin_log, get_admin_log)
+                           get_all_users_balance_stats, get_monthly_type_stats, get_otgul_top)
 from database.models import User, UserRole, RequestStatus, RequestType, TimeOffRequest
 from keyboards.menus import admin_main_menu
 from keyboards.request_kb import (admin_request_keyboard, revoke_request_keyboard,
@@ -260,41 +259,6 @@ async def cmd_pending_requests(message: Message):
         await message.answer(text, reply_markup=admin_request_keyboard(req.id), parse_mode="HTML")
 
 
-# ─── Лог действий администратора ─────────────────────────────────────────────
-_ACTION_LABELS = {
-    "approved":         "✅ Одобрил",
-    "approved_awaiting": "✅ Одобрил (ожид. отработки)",
-    "rejected":         "❌ Отклонил",
-    "revoked":          "🔄 Отозвал",
-}
-
-
-@router.message(F.text == "📋 Лог действий")
-async def cmd_admin_log(message: Message):
-    logger.info("📋 Лог действий | %s", _a(message))
-    async with AsyncSessionFactory() as session:
-        entries = await get_admin_log(session, limit=30)
-
-    if not entries:
-        await message.answer("📋 Лог действий пуст.")
-        return
-
-    lines = []
-    for e in entries:
-        action_label = _ACTION_LABELS.get(e.action, e.action)
-        req_ref = f" заявка #{e.request_id}" if e.request_id else ""
-        detail = f"\n   💬 {e.details}" if e.details else ""
-        lines.append(
-            f"<b>{e.created_at}</b> {e.admin_name}\n"
-            f"   {action_label}{req_ref} — {e.employee_name}{detail}"
-        )
-
-    await message.answer(
-        f"📋 <b>Лог действий (последние {len(entries)}):</b>\n\n" + "\n\n".join(lines),
-        parse_mode="HTML",
-    )
-
-
 # ─── Балансы сотрудников ──────────────────────────────────────────────────────
 @router.message(F.text == "💼 Балансы сотрудников")
 async def cmd_employees_balances(message: Message):
@@ -480,8 +444,7 @@ async def revoke_request(call: CallbackQuery, callback_data: RequestRevokeCallba
         req.status = RequestStatus.revoked
         await session.commit()
         admin_name_log = f"@{call.from_user.username}" if call.from_user.username else call.from_user.full_name
-        await add_admin_log(session, call.from_user.id, admin_name_log, "revoked",
-                            user.full_name, req.id, req.type.value)
+        logger.info("🔄 Заявка #%d отозвана | сотрудник %r | admin %s", req.id, user.full_name, admin_name_log)
 
     admin_name = admin_name_log
     await call.message.edit_text(

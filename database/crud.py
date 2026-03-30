@@ -448,33 +448,3 @@ async def get_otgul_top(
     return result.all()
 
 
-async def add_admin_log(
-    session: AsyncSession,
-    admin_tg_id: int,
-    admin_name: str,
-    action: str,
-    employee_name: str,
-    request_id: int | None = None,
-    details: str | None = None,
-) -> None:
-    from database.models import AdminLog
-    now = datetime.now(_BISHKEK).strftime("%Y-%m-%d %H:%M")
-    entry = AdminLog(
-        created_at=now,
-        admin_tg_id=admin_tg_id,
-        admin_name=admin_name,
-        action=action,
-        employee_name=employee_name,
-        request_id=request_id,
-        details=details,
-    )
-    session.add(entry)
-    await session.commit()
-
-
-async def get_admin_log(session: AsyncSession, limit: int = 30):
-    from database.models import AdminLog
-    result = await session.execute(
-        select(AdminLog).order_by(AdminLog.id.desc()).limit(limit)
-    )
-    return result.scalars().all()
