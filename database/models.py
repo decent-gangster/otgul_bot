@@ -70,6 +70,19 @@ class TimeOffRequest(Base):
         return f"<TimeOffRequest id={self.id} user_id={self.user_id} status={self.status}>"
 
 
+class AdminLog(Base):
+    __tablename__ = "admin_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    created_at = Column(String(16), nullable=False)     # "YYYY-MM-DD HH:MM"
+    admin_tg_id = Column(BigInteger, nullable=False)
+    admin_name = Column(String(255), nullable=False)
+    action = Column(String(32), nullable=False)         # approved/rejected/revoked/overtime_added/overtime_deducted
+    employee_name = Column(String(255), nullable=False)
+    request_id = Column(Integer, nullable=True)
+    details = Column(String(512), nullable=True)        # комментарий, кол-во часов и т.д.
+
+
 class BalanceLog(Base):
     __tablename__ = "balance_log"
 
