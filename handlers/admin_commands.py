@@ -12,7 +12,8 @@ from handlers.admin_request import IsAdmin
 from database.engine import AsyncSessionFactory
 from database.crud import (get_approved_requests_for_month, get_approved_requests_for_period,
                            get_pending_requests, get_user_by_tg_id, get_all_approved_requests,
-                           add_overtime_hours, deduct_overtime_hours, add_balance_log)
+                           add_overtime_hours, deduct_overtime_hours, add_balance_log,
+                           get_all_users_balance_stats)
 from database.models import User, UserRole, RequestStatus, RequestType, TimeOffRequest
 from keyboards.menus import admin_main_menu
 from keyboards.request_kb import (admin_request_keyboard, revoke_request_keyboard,
@@ -183,6 +184,37 @@ async def cmd_pending_requests(message: Message):
             f"💬 {req.reason or '—'}"
         )
         await message.answer(text, reply_markup=admin_request_keyboard(req.id), parse_mode="HTML")
+
+
+# ─── Балансы сотрудников ──────────────────────────────────────────────────────
+@router.message(F.text == "💼 Балансы сотрудников")
+async def cmd_employees_balances(message: Message):
+    logger.info("💼 Балансы сотрудников | %s", _a(message))
+    async with AsyncSessionFactory() as session:
+        stats = await get_all_users_balance_stats(session)
+
+    if not stats:
+        await message.answer("В базе данных ещё нет сотрудников.")
+        return
+
+    lines = []
+    for user, otgul_days, vacation_days, debt_hours in stats:
+        role_icon = "👑" if user.role == "admin" else "👤"
+        otgul_str = f"{otgul_days:.1f}".rstrip("0").rstrip(".")
+        parts = [
+            f"🏖 Отпускной баланс: <b>{user.vacation_balance:.1f} д.</b>",
+            f"⏱ Переработка: <b>{user.overtime_hours:.1f} ч.</b>",
+            f"🗓 Отгулов взято: <b>{otgul_str} д.</b>",
+            f"📅 Отпусков взято: <b>{vacation_days} д.</b>",
+        ]
+        if debt_hours > 0:
+            parts.append(f"⚠️ Долг к отработке: <b>{debt_hours:.1f} ч.</b>")
+        lines.append(f"{role_icon} <b>{user.full_name}</b>\n" + "\n".join(f"   {p}" for p in parts))
+
+    await message.answer(
+        f"💼 <b>Балансы сотрудников ({len(stats)}):</b>\n\n" + "\n\n".join(lines),
+        parse_mode="HTML",
+    )
 
 
 # ─── Управление сотрудниками ──────────────────────────────────────────────────

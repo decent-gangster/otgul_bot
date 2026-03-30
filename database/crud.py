@@ -372,3 +372,38 @@ async def get_approved_requests_for_month(
         .order_by(TimeOffRequest.start_date)
     )
     return result.all()
+
+
+async def get_all_users_balance_stats(session: AsyncSession):
+    """Возвращает список (user, otgul_days, vacation_days, debt_hours) для всех сотрудников."""
+    users_result = await session.execute(select(User).order_by(User.full_name))
+    users = users_result.scalars().all()
+
+    stats = []
+    for user in users:
+        reqs_result = await session.execute(
+            select(TimeOffRequest).where(
+                TimeOffRequest.user_id == user.id,
+                TimeOffRequest.status.in_([RequestStatus.approved, RequestStatus.awaiting_work]),
+            )
+        )
+        reqs = reqs_result.scalars().all()
+
+        otgul_days = 0.0
+        vacation_days = 0
+        debt_hours = 0.0
+
+        for r in reqs:
+            if r.type in (RequestType.otgul, RequestType.otgul_paid):
+                if r.hours:
+                    otgul_days += r.hours / 8
+                else:
+                    otgul_days += (r.end_date - r.start_date).days + 1
+            elif r.type == RequestType.vacation:
+                vacation_days += (r.end_date - r.start_date).days + 1
+            if r.status == RequestStatus.awaiting_work and r.debt_hours:
+                debt_hours += r.debt_hours
+
+        stats.append((user, otgul_days, vacation_days, debt_hours))
+
+    return stats
