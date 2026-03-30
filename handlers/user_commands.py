@@ -180,15 +180,19 @@ _MONTHS_RU = [
 
 
 def _fmt_absence_type(req) -> str:
-    """Краткое читаемое описание типа отсутствия."""
+    """Читаемое описание типа отсутствия с датами/временем."""
+    s = req.start_date.strftime("%d.%m")
+    e = req.end_date.strftime("%d.%m")
+    date_range = s if s == e else f"{s}–{e}"
+
     if req.type == RequestType.vacation:
-        return "отпуск"
+        return f"отпуск {date_range}"
     if req.type == RequestType.sick:
-        return "больничный"
+        return f"больничный {date_range}"
     suffix = "с сод." if req.type == RequestType.otgul_paid else "б/с"
     if req.time_from and req.time_to:
-        return f"отгул {suffix} {req.time_from}–{req.time_to}"
-    return f"отгул {suffix}"
+        return f"отгул {suffix} {s} {req.time_from}–{req.time_to}"
+    return f"отгул {suffix} {date_range}"
 
 
 async def _build_month_text(offset: int) -> str:
