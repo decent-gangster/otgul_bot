@@ -10,7 +10,7 @@ from states.request_states import AdminReviewForm
 from keyboards.request_kb import RequestActionCallback
 from keyboards.menus import admin_main_menu
 from database.engine import AsyncSessionFactory
-from database.crud import update_request_status, add_overtime_hours, deduct_overtime_hours, apply_overtime_to_debts, add_balance_log
+from database.crud import update_request_status, add_overtime_hours, deduct_overtime_hours, apply_overtime_to_debts, add_balance_log, add_admin_log
 from database.models import TimeOffRequest, User, RequestStatus, RequestType
 from utils.formatters import format_request_period, format_request_duration
 
@@ -119,6 +119,11 @@ async def approve_request(
 
         await update_request_status(session, request_id, status=final_status, debt_hours=debt_hours)
         logger.info("   заявка #%d → %s | сотрудник id=%d %r | %s", request_id, final_status, user.tg_id, user.full_name, _a(call))
+        admin_name = f"@{call.from_user.username}" if call.from_user.username else call.from_user.full_name
+        action = "approved" if final_status == RequestStatus.approved else "approved_awaiting"
+        await add_admin_log(session, call.from_user.id, admin_name, action,
+                            user.full_name, request_id,
+                            f"{req.type.value}" + (f", долг {debt_hours:.1f} ч." if debt_hours else ""))
 
     period = format_request_period(req)
     duration = format_request_duration(req)
@@ -231,6 +236,9 @@ async def reject_request_save(message: Message, state: FSMContext, bot: Bot):
             session, request_id, status=RequestStatus.rejected, admin_comment=comment
         )
         logger.info("   заявка #%d → rejected | сотрудник id=%d %r | %s", request_id, user.tg_id, user.full_name, _a(message))
+        admin_name = f"@{message.from_user.username}" if message.from_user.username else message.from_user.full_name
+        await add_admin_log(session, message.from_user.id, admin_name, "rejected",
+                            user.full_name, request_id, comment)
 
     period = format_request_period(req)
     duration = format_request_duration(req)

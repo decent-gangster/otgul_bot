@@ -5,7 +5,7 @@ import pytz
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 
-from database.models import User, TimeOffRequest, UserRole, RequestStatus, RequestType, BalanceLog
+from database.models import User, TimeOffRequest, UserRole, RequestStatus, RequestType, BalanceLog, AdminLog
 
 _BISHKEK = pytz.timezone("Asia/Bishkek")
 
@@ -422,6 +422,35 @@ async def get_monthly_type_stats(session: AsyncSession, year: int, month: int) -
         .group_by(TimeOffRequest.type)
     )
     return {row.type: row.cnt for row in result.all()}
+
+
+async def add_admin_log(
+    session: AsyncSession,
+    admin_tg_id: int,
+    admin_name: str,
+    action: str,
+    employee_name: str,
+    request_id: int | None = None,
+    details: str | None = None,
+) -> None:
+    now = datetime.now(_BISHKEK).strftime("%Y-%m-%d %H:%M")
+    session.add(AdminLog(
+        created_at=now,
+        admin_tg_id=admin_tg_id,
+        admin_name=admin_name,
+        action=action,
+        employee_name=employee_name,
+        request_id=request_id,
+        details=details,
+    ))
+    await session.commit()
+
+
+async def get_admin_log(session: AsyncSession, limit: int = 30) -> list[AdminLog]:
+    result = await session.execute(
+        select(AdminLog).order_by(AdminLog.id.desc()).limit(limit)
+    )
+    return result.scalars().all()
 
 
 async def get_otgul_top(

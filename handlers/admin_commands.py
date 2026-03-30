@@ -13,7 +13,8 @@ from database.engine import AsyncSessionFactory
 from database.crud import (get_approved_requests_for_month, get_approved_requests_for_period,
                            get_pending_requests, get_user_by_tg_id, get_all_approved_requests,
                            add_overtime_hours, deduct_overtime_hours, add_balance_log,
-                           get_all_users_balance_stats, get_monthly_type_stats, get_otgul_top)
+                           get_all_users_balance_stats, get_monthly_type_stats, get_otgul_top,
+                           add_admin_log)
 from database.models import User, UserRole, RequestStatus, RequestType, TimeOffRequest
 from keyboards.menus import admin_main_menu
 from keyboards.request_kb import (admin_request_keyboard, revoke_request_keyboard,
@@ -445,6 +446,8 @@ async def revoke_request(call: CallbackQuery, callback_data: RequestRevokeCallba
         await session.commit()
         admin_name_log = f"@{call.from_user.username}" if call.from_user.username else call.from_user.full_name
         logger.info("🔄 Заявка #%d отозвана | сотрудник %r | admin %s", req.id, user.full_name, admin_name_log)
+        await add_admin_log(session, call.from_user.id, admin_name_log, "revoked",
+                            user.full_name, req.id, req.type.value)
 
     admin_name = admin_name_log
     await call.message.edit_text(
