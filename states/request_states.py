@@ -42,5 +42,6 @@ class ReportForm(StatesGroup):
 class TemplateForm(StatesGroup):
     """Состояния для генерации шаблона заявления."""
     entering_start_date = State()
+    choosing_vacation_days = State()  # выбор 7 или 14 дней (только для отпуска)
     entering_end_date = State()
     entering_reason = State()

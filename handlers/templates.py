@@ -4,6 +4,7 @@ from datetime import datetime, date
 import pymorphy3
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 
 from states.request_states import TemplateForm
@@ -89,7 +90,14 @@ def templates_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-def _vacation_text(full_name: str, start: date) -> str:
+def vacation_days_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="7 календарных дней", callback_data="tmpl_vdays_7")],
+        [InlineKeyboardButton(text="14 календарных дней", callback_data="tmpl_vdays_14")],
+    ])
+
+
+def _vacation_text(full_name: str, start: date, days: int) -> str:
     today_str = _date_ru(date.today())
     return (
         f"Председателю Правления\n"
@@ -104,7 +112,7 @@ def _vacation_text(full_name: str, start: date) -> str:
         f"                  Заявление\n"
         f"\n\n"
         f"Прошу Вас предоставить мне трудовой отпуск\n"
-        f"с {_date_ru(start)} на 14 календарных дней.\n"
+        f"с {_date_ru(start)} на {days} календарных дней.\n"
         f"\n\n"
         f"{today_str}\n"
         f"Подпись: ___________"
@@ -189,13 +197,10 @@ async def tmpl_enter_start(message: Message, state: FSMContext):
     await state.update_data(start_date=start.isoformat())
 
     if data["tmpl_type"] == "vacation":
-        async with AsyncSessionFactory() as session:
-            user = await get_or_create_user(session, message.from_user.id, message.from_user.full_name)
-        text = _vacation_text(user.full_name, start)
-        await state.clear()
+        await state.set_state(TemplateForm.choosing_vacation_days)
         await message.answer(
-            "📋 Скопируйте текст заявления:\n\n"
-            f"<pre>{text}</pre>",
+            f"🌴 Дата начала: <b>{_date_ru(start)}</b>\n\nНа сколько дней?",
+            reply_markup=vacation_days_keyboard(),
             parse_mode="HTML",
         )
     else:
@@ -204,6 +209,29 @@ async def tmpl_enter_start(message: Message, state: FSMContext):
             "Введите дату окончания:\n<i>Например: 07.04.2026</i>",
             parse_mode="HTML",
         )
+
+
+# ─── Выбор дней отпуска (7 или 14) ──────────────────────────────────────────
+@router.callback_query(
+    F.data.in_({"tmpl_vdays_7", "tmpl_vdays_14"}),
+    TemplateForm.choosing_vacation_days,
+)
+async def tmpl_choose_vacation_days(call: CallbackQuery, state: FSMContext):
+    days = 7 if call.data == "tmpl_vdays_7" else 14
+    data = await state.get_data()
+    start = date.fromisoformat(data["start_date"])
+
+    async with AsyncSessionFactory() as session:
+        user = await get_or_create_user(session, call.from_user.id, call.from_user.full_name)
+
+    text = _vacation_text(user.full_name, start, days)
+    await state.clear()
+    await call.message.edit_text(
+        "📋 Скопируйте текст заявления:\n\n"
+        f"<pre>{text}</pre>",
+        parse_mode="HTML",
+    )
+    await call.answer()
 
 
 # ─── Дата окончания (только для отгула) ──────────────────────────────────────
