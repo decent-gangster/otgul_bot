@@ -11,6 +11,7 @@ def user_main_menu() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="💰 Мой баланс")],
             [KeyboardButton(text="📊 История баланса")],
             [KeyboardButton(text="📅 Календарь отсутствий")],
+            [KeyboardButton(text="📄 Шаблоны заявлений")],
         ],
         resize_keyboard=True,
         input_field_placeholder="Выберите действие..."
@@ -30,6 +31,7 @@ def admin_main_menu() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="💰 Мой баланс")],
             [KeyboardButton(text="📊 История баланса")],
             [KeyboardButton(text="📅 Календарь отсутствий")],
+            [KeyboardButton(text="📄 Шаблоны заявлений")],
         ],
         resize_keyboard=True,
         input_field_placeholder="Выберите действие..."

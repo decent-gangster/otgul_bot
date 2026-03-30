@@ -37,3 +37,10 @@ class AdminReviewForm(StatesGroup):
 class ReportForm(StatesGroup):
     """Состояния для генерации отчёта."""
     entering_period = State()    # ввод произвольного периода
+
+
+class TemplateForm(StatesGroup):
+    """Состояния для генерации шаблона заявления."""
+    entering_start_date = State()
+    entering_end_date = State()
+    entering_reason = State()

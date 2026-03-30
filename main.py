@@ -17,6 +17,7 @@ from handlers import (
     user_request,
     admin_commands,
     admin_request,
+    templates,
 )
 
 setup_logging()
@@ -43,6 +44,7 @@ async def main() -> None:
     dp.include_router(admin_request.router)    # одобрить / отклонить заявку
     dp.include_router(user_commands.router)    # /start, /balance, «Мой баланс»
     dp.include_router(user_request.router)     # FSM подачи заявки
+    dp.include_router(templates.router)        # шаблоны заявлений
 
     # ── База данных ───────────────────────────────────────────────────────────
     await init_db()
