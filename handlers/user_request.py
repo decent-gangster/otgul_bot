@@ -336,13 +336,30 @@ async def choose_end_date(call: CallbackQuery, callback_data: CalendarCallback, 
     days = (end - start).days + 1
     logger.info("📝 шаг 5: дата конца=%s (%d д.) | %s", end, days, _u(call))
     await state.update_data(end_date=end.isoformat())
-    await state.set_state(RequestForm.entering_reason)
-    await call.message.edit_text(
-        f"✅ Дата начала: <b>{start.strftime('%d.%m.%Y')}</b>\n"
-        f"✅ Дата окончания: <b>{end.strftime('%d.%m.%Y')}</b>\n\n"
-        f"✏️ <b>Укажите причину</b> (или напишите «—»):",
-        parse_mode="HTML",
-    )
+    data = await state.get_data()
+
+    if data.get("request_type") == "отпуск":
+        # Для отпуска причина не нужна — сразу к подтверждению
+        await state.update_data(reason=None)
+        duration = format_duration(data | {"end_date": end.isoformat()})
+        summary = (
+            f"📄 <b>Итог вашей заявки:</b>\n\n"
+            f"📋 Тип: <b>{REQUEST_TYPE_LABELS['отпуск']}</b>\n"
+            f"📅 Начало: <b>{start.strftime('%d.%m.%Y')}</b>\n"
+            f"📅 Конец: <b>{end.strftime('%d.%m.%Y')}</b>\n"
+            f"🔢 Длительность: <b>{duration}</b>\n\n"
+            f"Всё верно?"
+        )
+        await state.set_state(RequestForm.confirming)
+        await call.message.edit_text(summary, reply_markup=confirm_keyboard(), parse_mode="HTML")
+    else:
+        await state.set_state(RequestForm.entering_reason)
+        await call.message.edit_text(
+            f"✅ Дата начала: <b>{start.strftime('%d.%m.%Y')}</b>\n"
+            f"✅ Дата окончания: <b>{end.strftime('%d.%m.%Y')}</b>\n\n"
+            f"✏️ <b>Укажите причину</b> (или напишите «—»):",
+            parse_mode="HTML",
+        )
     await call.answer()
 
 
@@ -369,11 +386,10 @@ async def enter_reason(message: Message, state: FSMContext):
     if data.get("time_from") and data.get("time_to"):
         lunch_note = "\n   ✂️ Обед (12:00–13:00) не считается" if data.get("lunch_deducted") else ""
         summary += f"⏰ Время: <b>{data['time_from']} — {data['time_to']}</b>{lunch_note}\n"
-    summary += (
-        f"🔢 Длительность: <b>{duration}</b>\n"
-        f"💬 Причина: <b>{reason}</b>\n\n"
-        f"Всё верно?"
-    )
+    summary += f"🔢 Длительность: <b>{duration}</b>\n"
+    if reason and reason != "—":
+        summary += f"💬 Причина: <b>{reason}</b>\n"
+    summary += "\nВсё верно?"
     await state.set_state(RequestForm.confirming)
     await message.answer(summary, reply_markup=confirm_keyboard(), parse_mode="HTML")
 
@@ -396,7 +412,7 @@ async def confirm_request(call: CallbackQuery, state: FSMContext, bot: Bot, admi
             hours=data.get("hours"),
             time_from=data.get("time_from"),
             time_to=data.get("time_to"),
-            reason=data["reason"],
+            reason=data.get("reason"),
         )
 
     start = date.fromisoformat(data["start_date"])
@@ -430,8 +446,9 @@ async def confirm_request(call: CallbackQuery, state: FSMContext, bot: Bot, admi
         admin_text += f"⏰ Время: <b>{data['time_from']} — {data['time_to']}</b>\n"
     admin_text += (
         f"🔢 Длительность: <b>{duration}</b>\n"
-        f"💬 Причина: <b>{data['reason']}</b>"
     )
+    if data.get("reason"):
+        admin_text += f"\n💬 Причина: <b>{data['reason']}</b>"
     for admin_id in admin_ids:
         try:
             await bot.send_message(admin_id, admin_text, reply_markup=admin_request_keyboard(req.id), parse_mode="HTML")
