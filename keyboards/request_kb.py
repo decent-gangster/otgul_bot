@@ -31,8 +31,8 @@ class ReportPeriodCallback(CallbackData, prefix="report"):
     period: str  # "current", "previous", "custom"
 
 
-class WeekNavCallback(CallbackData, prefix="week"):
-    offset: int  # смещение в днях от понедельника текущей недели
+class MonthNavCallback(CallbackData, prefix="month"):
+    offset: int  # смещение в месяцах от текущего (0 = текущий, -1 = прошлый, ...)
 
 
 class TimeCallback(CallbackData, prefix="time_pick"):
@@ -113,11 +113,11 @@ def confirm_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-def week_nav_keyboard(offset: int) -> InlineKeyboardMarkup:
-    """Кнопки навигации по неделям для календаря отсутствий."""
+def month_nav_keyboard(offset: int) -> InlineKeyboardMarkup:
+    """Кнопки навигации по месяцам для календаря отсутствий."""
     return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="◀️ Пред. неделя", callback_data=WeekNavCallback(offset=offset - 7).pack()),
-        InlineKeyboardButton(text="След. неделя ▶️", callback_data=WeekNavCallback(offset=offset + 7).pack()),
+        InlineKeyboardButton(text="◀️ Пред. месяц", callback_data=MonthNavCallback(offset=offset - 1).pack()),
+        InlineKeyboardButton(text="След. месяц ▶️", callback_data=MonthNavCallback(offset=offset + 1).pack()),
     ]])
 
 

@@ -5,11 +5,12 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from datetime import date, timedelta
+import calendar
 
 from keyboards.menus import user_main_menu, admin_main_menu
 from keyboards.request_kb import (cancel_own_request_keyboard, cancel_confirm_keyboard,
                                    RequestCancelCallback, RequestCancelConfirmCallback,
-                                   RequestCancelBackCallback, WeekNavCallback, week_nav_keyboard)
+                                   RequestCancelBackCallback, MonthNavCallback, month_nav_keyboard)
 from database.engine import AsyncSessionFactory
 from database.crud import (get_or_create_user, get_user_month_days, get_requests_by_user,
                            get_awaiting_work_requests, get_balance_log, get_absences_for_period)
@@ -171,31 +172,56 @@ async def cmd_my_requests(message: Message):
 
 
 # ─── Календарь отсутствий ────────────────────────────────────────────────────
-DAY_NAMES = ["Пн", "Вт", "Ср", "Чт", "Пт"]
+_DAY_ABBR = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+_MONTHS_RU = [
+    "", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+]
 
 
-async def _build_week_text(offset: int) -> str:
+def _fmt_absence_type(req) -> str:
+    """Краткое читаемое описание типа отсутствия."""
+    if req.type == RequestType.vacation:
+        return "отпуск"
+    if req.type == RequestType.sick:
+        return "больничный"
+    suffix = "с сод." if req.type == RequestType.otgul_paid else "б/с"
+    if req.time_from and req.time_to:
+        return f"отгул {suffix} {req.time_from}–{req.time_to}"
+    return f"отгул {suffix}"
+
+
+async def _build_month_text(offset: int) -> str:
     today = date.today()
-    monday = today - timedelta(days=today.weekday())
-    week_start = monday + timedelta(days=offset)
-    week_end = week_start + timedelta(days=4)  # пятница
+    # Вычисляем целевой месяц через смещение
+    month = today.month + offset
+    year = today.year + (month - 1) // 12
+    month = ((month - 1) % 12) + 1
+
+    first_day = date(year, month, 1)
+    last_day = date(year, month, calendar.monthrange(year, month)[1])
 
     async with AsyncSessionFactory() as session:
-        rows = await get_absences_for_period(session, week_start, week_end)
+        rows = await get_absences_for_period(session, first_day, last_day)
 
-    lines = [f"📅 <b>Неделя {week_start.strftime('%d.%m')} — {week_end.strftime('%d.%m.%Y')}</b>\n"]
-    for i in range(5):
-        day = week_start + timedelta(days=i)
-        absents = [
-            f"{user.full_name} <i>({req.type.value})</i>"
-            for req, user in rows
-            if req.start_date <= day <= req.end_date
-        ]
-        day_str = day.strftime("%d.%m")
-        if absents:
-            lines.append(f"<b>{DAY_NAMES[i]} {day_str}:</b> {', '.join(absents)}")
-        else:
-            lines.append(f"<b>{DAY_NAMES[i]} {day_str}:</b> —")
+    header = f"📅 <b>{_MONTHS_RU[month]} {year}</b>\n"
+
+    # Группируем по дням
+    day_map: dict[date, list[str]] = {}
+    for req, user in rows:
+        cur = max(req.start_date, first_day)
+        while cur <= min(req.end_date, last_day):
+            label = f"{user.full_name} <i>({_fmt_absence_type(req)})</i>"
+            day_map.setdefault(cur, []).append(label)
+            cur += timedelta(days=1)
+
+    if not day_map:
+        return header + "\nВ этом месяце отсутствий нет."
+
+    lines = [header]
+    for d in sorted(day_map):
+        dow = _DAY_ABBR[d.weekday()]
+        lines.append(f"<b>{d.strftime('%d.%m')} ({dow}):</b> {', '.join(day_map[d])}")
 
     return "\n".join(lines)
 
@@ -203,14 +229,14 @@ async def _build_week_text(offset: int) -> str:
 @router.message(F.text == "📅 Календарь отсутствий")
 async def cmd_absence_calendar(message: Message):
     logger.info("📅 Календарь отсутствий | %s", _u(message))
-    text = await _build_week_text(offset=0)
-    await message.answer(text, reply_markup=week_nav_keyboard(0), parse_mode="HTML")
+    text = await _build_month_text(offset=0)
+    await message.answer(text, reply_markup=month_nav_keyboard(0), parse_mode="HTML")
 
 
-@router.callback_query(WeekNavCallback.filter())
-async def navigate_week(call: CallbackQuery, callback_data: WeekNavCallback):
-    text = await _build_week_text(offset=callback_data.offset)
-    await call.message.edit_text(text, reply_markup=week_nav_keyboard(callback_data.offset), parse_mode="HTML")
+@router.callback_query(MonthNavCallback.filter())
+async def navigate_month(call: CallbackQuery, callback_data: MonthNavCallback):
+    text = await _build_month_text(offset=callback_data.offset)
+    await call.message.edit_text(text, reply_markup=month_nav_keyboard(callback_data.offset), parse_mode="HTML")
     await call.answer()
 
 
