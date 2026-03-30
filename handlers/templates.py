@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, date
 
-import pymorphy2
+import pymorphy3
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
@@ -10,23 +10,30 @@ from states.request_states import TemplateForm
 from database.engine import AsyncSessionFactory
 from database.crud import get_or_create_user
 
-_morph = pymorphy2.MorphAnalyzer()
+_morph = pymorphy3.MorphAnalyzer()
+_MIN_NOMN_SCORE = 0.05  # порог для фильтрации ложных именительных разборов
 
 def _inflect_word(word: str) -> str:
-    """Склоняет слово в творительный падеж, только если оно стоит в именительном падеже."""
+    """Склоняет слово в творительный падеж.
+    Ищет именительный разбор с вероятностью выше порога (чтобы не склонять
+    слова, которые явно стоят в другом падеже, типа «ребенка», «здоровья»).
+    """
     parsed = _morph.parse(word)
     if not parsed:
         return word
-    best = parsed[0]
-    if best.tag.POS not in ("NOUN", "ADJF", "ADJS", "PRTF", "PRTS"):
-        return word
-    if best.tag.case != "nomn":
-        # Слово уже стоит в другом падеже (родит., творит. и т.д.) — не трогаем
+    nomn = next(
+        (p for p in parsed
+         if p.tag.POS in ("NOUN", "ADJF", "ADJS", "PRTF", "PRTS")
+         and p.tag.case == "nomn"
+         and p.score >= _MIN_NOMN_SCORE),
+        None,
+    )
+    if nomn is None:
         return word
     grammemes = {"ablt"}
-    if best.tag.number == "plur":
+    if nomn.tag.number == "plur":
         grammemes.add("plur")
-    inflected = best.inflect(grammemes)
+    inflected = nomn.inflect(grammemes)
     if inflected:
         result = inflected.word
         return result.capitalize() if word[0].isupper() else result
