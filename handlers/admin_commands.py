@@ -202,7 +202,6 @@ async def cmd_employees_balances(message: Message):
         role_icon = "👑" if user.role == "admin" else "👤"
         otgul_str = f"{otgul_days:.1f}".rstrip("0").rstrip(".")
         parts = [
-            f"🏖 Отпускной баланс: <b>{user.vacation_balance:.1f} д.</b>",
             f"⏱ Переработка: <b>{user.overtime_hours:.1f} ч.</b>",
             f"🗓 Отгулов взято: <b>{otgul_str} д.</b>",
             f"📅 Отпусков взято: <b>{vacation_days} д.</b>",
