@@ -25,6 +25,7 @@ def admin_main_menu() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="📬 Список новых заявок")],
             [KeyboardButton(text="✅ Одобренные заявки")],
             [KeyboardButton(text="📊 Отчёт")],
+            [KeyboardButton(text="📈 Статистика")],
             [KeyboardButton(text="👥 Управление сотрудниками")],
             [KeyboardButton(text="💼 Балансы сотрудников")],
             [KeyboardButton(text="📝 Подать заявку")],

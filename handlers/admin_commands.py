@@ -13,13 +13,15 @@ from database.engine import AsyncSessionFactory
 from database.crud import (get_approved_requests_for_month, get_approved_requests_for_period,
                            get_pending_requests, get_user_by_tg_id, get_all_approved_requests,
                            add_overtime_hours, deduct_overtime_hours, add_balance_log,
-                           get_all_users_balance_stats)
+                           get_all_users_balance_stats, get_monthly_type_stats, get_otgul_top)
 from database.models import User, UserRole, RequestStatus, RequestType, TimeOffRequest
 from keyboards.menus import admin_main_menu
 from keyboards.request_kb import (admin_request_keyboard, revoke_request_keyboard,
-                                  RequestRevokeCallback, ReportPeriodCallback, report_period_keyboard)
+                                  RequestRevokeCallback, ReportPeriodCallback, report_period_keyboard,
+                                  StatsNavCallback, stats_nav_keyboard)
 from sqlalchemy import select as sa_select
 from sqlalchemy import select
+import calendar as cal
 from utils.formatters import format_request_period, format_request_duration
 from states.request_states import ReportForm
 
@@ -151,6 +153,77 @@ async def report_custom_generate(message: Message, state: FSMContext):
     async with AsyncSessionFactory() as session:
         rows = await get_approved_requests_for_period(session, start, end)
     await _send_report(message, rows, start, end)
+
+
+# ─── Статистика ──────────────────────────────────────────────────────────────
+_MONTHS_RU = [
+    "", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+]
+_TYPE_LABELS = {
+    RequestType.otgul:       "🗓 Отгул (б/с)",
+    RequestType.otgul_paid:  "🗓 Отгул (с сод.)",
+    RequestType.vacation:    "🏖 Отпуск",
+    RequestType.sick:        "🏥 Больничный",
+    RequestType.overtime:    "⏱ Переработка",
+}
+
+
+async def _build_stats_text(offset: int) -> str:
+    today = date.today()
+    month = ((today.month - 1 + offset) % 12) + 1
+    year = today.year + (today.month - 1 + offset) // 12
+
+    async with AsyncSessionFactory() as session:
+        type_counts = await get_monthly_type_stats(session, year, month)
+        top_month = await get_otgul_top(session, year, month=month)
+        top_year = await get_otgul_top(session, year)
+
+    total = sum(type_counts.values())
+    header = f"📈 <b>Статистика — {_MONTHS_RU[month]} {year}</b>\n"
+
+    # Разбивка по типам
+    if total == 0:
+        type_block = "\nЗаявок в этом месяце нет."
+    else:
+        lines = []
+        for req_type, label in _TYPE_LABELS.items():
+            cnt = type_counts.get(req_type, 0)
+            if cnt:
+                pct = cnt / total * 100
+                lines.append(f"  {label}: <b>{cnt}</b> ({pct:.0f}%)")
+        lines.append(f"\n  Итого: <b>{total}</b> заявок")
+        type_block = "\n" + "\n".join(lines)
+
+    # Топ за месяц
+    if top_month:
+        month_top_lines = [f"  {i+1}. {name} — <b>{cnt}</b>" for i, (name, cnt) in enumerate(top_month)]
+        month_top_block = "\n\n🏆 <b>Топ по отгулам за месяц:</b>\n" + "\n".join(month_top_lines)
+    else:
+        month_top_block = "\n\n🏆 <b>Топ по отгулам за месяц:</b>\n  Нет данных"
+
+    # Топ за год
+    if top_year:
+        year_top_lines = [f"  {i+1}. {name} — <b>{cnt}</b>" for i, (name, cnt) in enumerate(top_year)]
+        year_top_block = f"\n\n🥇 <b>Топ по отгулам за {year} год:</b>\n" + "\n".join(year_top_lines)
+    else:
+        year_top_block = f"\n\n🥇 <b>Топ по отгулам за {year} год:</b>\n  Нет данных"
+
+    return header + type_block + month_top_block + year_top_block
+
+
+@router.message(F.text == "📈 Статистика")
+async def cmd_stats(message: Message):
+    logger.info("📈 Статистика | %s", _a(message))
+    text = await _build_stats_text(offset=0)
+    await message.answer(text, reply_markup=stats_nav_keyboard(0), parse_mode="HTML")
+
+
+@router.callback_query(StatsNavCallback.filter())
+async def navigate_stats(call: CallbackQuery, callback_data: StatsNavCallback):
+    text = await _build_stats_text(offset=callback_data.offset)
+    await call.message.edit_text(text, reply_markup=stats_nav_keyboard(callback_data.offset), parse_mode="HTML")
+    await call.answer()
 
 
 # ─── Список новых заявок ─────────────────────────────────────────────────────

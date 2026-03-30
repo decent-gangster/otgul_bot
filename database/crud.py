@@ -407,3 +407,42 @@ async def get_all_users_balance_stats(session: AsyncSession):
         stats.append((user, otgul_days, vacation_days, debt_hours))
 
     return stats
+
+
+async def get_monthly_type_stats(session: AsyncSession, year: int, month: int) -> dict:
+    """Статистика по типам одобренных заявок за указанный месяц."""
+    from sqlalchemy import func, extract
+    result = await session.execute(
+        select(TimeOffRequest.type, func.count().label("cnt"))
+        .where(
+            TimeOffRequest.status.in_([RequestStatus.approved, RequestStatus.awaiting_work]),
+            extract("year", TimeOffRequest.start_date) == year,
+            extract("month", TimeOffRequest.start_date) == month,
+        )
+        .group_by(TimeOffRequest.type)
+    )
+    return {row.type: row.cnt for row in result.all()}
+
+
+async def get_otgul_top(
+    session: AsyncSession, year: int, month: int | None = None, limit: int = 5
+) -> list[tuple]:
+    """Топ сотрудников по количеству отгулов (за год или за месяц)."""
+    from sqlalchemy import func, extract
+    filters = [
+        TimeOffRequest.status.in_([RequestStatus.approved, RequestStatus.awaiting_work]),
+        TimeOffRequest.type.in_([RequestType.otgul, RequestType.otgul_paid]),
+        extract("year", TimeOffRequest.start_date) == year,
+    ]
+    if month:
+        filters.append(extract("month", TimeOffRequest.start_date) == month)
+
+    result = await session.execute(
+        select(User.full_name, func.count().label("cnt"))
+        .join(TimeOffRequest, TimeOffRequest.user_id == User.id)
+        .where(*filters)
+        .group_by(User.full_name)
+        .order_by(func.count().desc())
+        .limit(limit)
+    )
+    return result.all()

@@ -35,6 +35,10 @@ class MonthNavCallback(CallbackData, prefix="month"):
     offset: int  # смещение в месяцах от текущего (0 = текущий, -1 = прошлый, ...)
 
 
+class StatsNavCallback(CallbackData, prefix="stats"):
+    offset: int  # смещение в месяцах от текущего для статистики
+
+
 class TimeCallback(CallbackData, prefix="time_pick"):
     value: str  # "0800" — без двоеточия, оно запрещено в CallbackData
 
@@ -111,6 +115,14 @@ def confirm_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_request"),
         ]
     ])
+
+
+def stats_nav_keyboard(offset: int) -> InlineKeyboardMarkup:
+    """Кнопки навигации по месяцам для статистики."""
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="◀️ Пред. месяц", callback_data=StatsNavCallback(offset=offset - 1).pack()),
+        InlineKeyboardButton(text="След. месяц ▶️", callback_data=StatsNavCallback(offset=offset + 1).pack()),
+    ]])
 
 
 def month_nav_keyboard(offset: int) -> InlineKeyboardMarkup:
