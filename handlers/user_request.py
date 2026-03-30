@@ -92,7 +92,7 @@ async def choose_type(call: CallbackQuery, callback_data: RequestTypeCallback, s
     elif req_type == "день рождения":
         today = date.today()
         async with AsyncSessionFactory() as session:
-            user = await get_or_create_user(session, call.from_user.id, call.from_user.full_name)
+            user = await get_or_create_user(session, call.from_user.id, call.from_user.full_name, username=call.from_user.username)
             already_used = await has_birthday_request_this_year(session, user.id, today.year)
 
         if not user.birth_date:
@@ -257,7 +257,7 @@ async def choose_start_date(call: CallbackQuery, callback_data: CalendarCallback
         return
 
     async with AsyncSessionFactory() as session:
-        user = await get_or_create_user(session, call.from_user.id, call.from_user.full_name)
+        user = await get_or_create_user(session, call.from_user.id, call.from_user.full_name, username=call.from_user.username)
         overlap = await has_overlapping_request(session, user.id, chosen)
     if overlap:
         await call.answer("⚠️ У вас уже есть заявка на эту дату!", show_alert=True)
@@ -402,7 +402,7 @@ async def confirm_request(call: CallbackQuery, state: FSMContext, bot: Bot, admi
     await state.clear()
 
     async with AsyncSessionFactory() as session:
-        user = await get_or_create_user(session, call.from_user.id, call.from_user.full_name)
+        user = await get_or_create_user(session, call.from_user.id, call.from_user.full_name, username=call.from_user.username)
         req = await create_request(
             session,
             user_id=user.id,
@@ -494,7 +494,7 @@ async def overtime_choose_date(call: CallbackQuery, callback_data: CalendarCallb
         return
 
     async with AsyncSessionFactory() as session:
-        user = await get_or_create_user(session, call.from_user.id, call.from_user.full_name)
+        user = await get_or_create_user(session, call.from_user.id, call.from_user.full_name, username=call.from_user.username)
         duplicate = await has_overtime_on_date(session, user.id, chosen)
     if duplicate:
         logger.warning("⚠ Дубль переработки на дату %s | %s", chosen, _u(call))
@@ -565,7 +565,7 @@ async def overtime_confirm(call: CallbackQuery, state: FSMContext, bot: Bot, adm
     h_str = f"{hours:.0f}" if hours == int(hours) else f"{hours:.1f}"
 
     async with AsyncSessionFactory() as session:
-        user = await get_or_create_user(session, call.from_user.id, call.from_user.full_name)
+        user = await get_or_create_user(session, call.from_user.id, call.from_user.full_name, username=call.from_user.username)
         req = await create_request(
             session,
             user_id=user.id,

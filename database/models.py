@@ -35,6 +35,7 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     tg_id = Column(BigInteger, unique=True, nullable=False, index=True)
+    username = Column(String(64), nullable=True)  # @username в Telegram (без @)
     full_name = Column(String(255), nullable=False)
     role = Column(Enum(UserRole), default=UserRole.user, nullable=False)
     vacation_balance = Column(Float, default=0.0, nullable=False)

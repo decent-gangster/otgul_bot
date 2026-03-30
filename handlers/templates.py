@@ -222,7 +222,7 @@ async def tmpl_choose_vacation_days(call: CallbackQuery, state: FSMContext):
     start = date.fromisoformat(data["start_date"])
 
     async with AsyncSessionFactory() as session:
-        user = await get_or_create_user(session, call.from_user.id, call.from_user.full_name)
+        user = await get_or_create_user(session, call.from_user.id, call.from_user.full_name, username=call.from_user.username)
 
     text = _vacation_text(user.full_name, start, days)
     await state.clear()
@@ -265,7 +265,7 @@ async def tmpl_enter_reason(message: Message, state: FSMContext):
     end = date.fromisoformat(data["end_date"])
 
     async with AsyncSessionFactory() as session:
-        user = await get_or_create_user(session, message.from_user.id, message.from_user.full_name)
+        user = await get_or_create_user(session, message.from_user.id, message.from_user.full_name, username=message.from_user.username)
 
     text = _dayoff_text(user.full_name, start, end, reason)
     await state.clear()

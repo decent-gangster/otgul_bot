@@ -42,7 +42,7 @@ async def cmd_start(message: Message, state: FSMContext, admin_ids: list[int]):
     from states.request_states import OnboardingForm
     logger.info("▶ /start | пользователь %s", _u(message))
     async with AsyncSessionFactory() as session:
-        user = await get_or_create_user(session, message.from_user.id, message.from_user.full_name)
+        user = await get_or_create_user(session, message.from_user.id, message.from_user.full_name, username=message.from_user.username)
 
     if not user.birth_date:
         await state.set_state(OnboardingForm.entering_name)
@@ -80,7 +80,7 @@ async def cmd_balance(message: Message):
     today = date.today()
 
     async with AsyncSessionFactory() as session:
-        user = await get_or_create_user(session, message.from_user.id, message.from_user.full_name)
+        user = await get_or_create_user(session, message.from_user.id, message.from_user.full_name, username=message.from_user.username)
         days_this_month = await get_user_month_days(session, user.id, today.year, today.month)
         all_requests = await get_requests_by_user(session, user.id)
         awaiting = await get_awaiting_work_requests(session, user.id)
@@ -145,7 +145,7 @@ async def cmd_balance(message: Message):
 async def cmd_my_requests(message: Message):
     logger.info("📋 Мои заявки | %s", _u(message))
     async with AsyncSessionFactory() as session:
-        user = await get_or_create_user(session, message.from_user.id, message.from_user.full_name)
+        user = await get_or_create_user(session, message.from_user.id, message.from_user.full_name, username=message.from_user.username)
         requests = await get_requests_by_user(session, user.id)
 
     logger.info("   найдено заявок: %d | %s", len(requests), _u(message))
@@ -249,7 +249,7 @@ async def navigate_month(call: CallbackQuery, callback_data: MonthNavCallback):
 async def cmd_balance_log(message: Message):
     logger.info("📊 История баланса | %s", _u(message))
     async with AsyncSessionFactory() as session:
-        user = await get_or_create_user(session, message.from_user.id, message.from_user.full_name)
+        user = await get_or_create_user(session, message.from_user.id, message.from_user.full_name, username=message.from_user.username)
         log = await get_balance_log(session, user.id)
 
     if not log:
@@ -343,7 +343,7 @@ async def cancel_back(call: CallbackQuery, callback_data: RequestCancelBackCallb
 async def cmd_back(message: Message, admin_ids: list[int]):
     logger.info("🔙 Назад | %s", _u(message))
     async with AsyncSessionFactory() as session:
-        user = await get_or_create_user(session, message.from_user.id, message.from_user.full_name)
+        user = await get_or_create_user(session, message.from_user.id, message.from_user.full_name, username=message.from_user.username)
 
     is_admin = message.from_user.id in admin_ids or user.role == UserRole.admin
     menu = admin_main_menu() if is_admin else user_main_menu()

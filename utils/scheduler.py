@@ -53,10 +53,11 @@ async def send_reminders(bot: Bot) -> None:
             try:
                 period = format_request_period(req)
                 duration = format_request_duration(req)
+                mention = f"@{user.username}" if user.username else user.full_name
                 await bot.send_message(
                     user.tg_id,
                     f"🔔 <b>Напоминание</b>\n\n"
-                    f"Завтра у вас: <b>{req.type.value}</b>\n"
+                    f"{mention}, завтра у вас: <b>{req.type.value}</b>\n"
                     f"📅 Период: <b>{period}</b>\n"
                     f"🔢 Длительность: <b>{duration}</b>",
                     parse_mode="HTML",

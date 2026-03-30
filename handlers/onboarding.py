@@ -51,7 +51,7 @@ async def onboarding_enter_birth_date(message: Message, state: FSMContext, admin
     await state.clear()
 
     async with AsyncSessionFactory() as session:
-        user = await get_or_create_user(session, message.from_user.id, message.from_user.full_name)
+        user = await get_or_create_user(session, message.from_user.id, message.from_user.full_name, username=message.from_user.username)
         user.full_name = full_name
         user.birth_date = birth_date
         await session.commit()

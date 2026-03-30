@@ -25,14 +25,19 @@ async def create_user(session: AsyncSession, tg_id: int, full_name: str, role: U
     return user
 
 
-async def get_or_create_user(session: AsyncSession, tg_id: int, full_name: str) -> User:
+async def get_or_create_user(
+    session: AsyncSession, tg_id: int, full_name: str, username: str | None = None
+) -> User:
     user = await get_user_by_tg_id(session, tg_id)
     if not user:
         user = await create_user(session, tg_id, full_name)
     elif user.full_name != full_name and not user.birth_date:
         # Обновляем имя из Telegram только до прохождения онбординга
         user.full_name = full_name
-        await session.commit()
+    # Всегда обновляем username если изменился
+    if username and user.username != username:
+        user.username = username
+    await session.commit()
     return user
 
 

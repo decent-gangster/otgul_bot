@@ -47,6 +47,12 @@ async def init_db():
             await conn.execute(text("ALTER TABLE users ADD COLUMN birth_date DATE"))
         except Exception:
             pass
+        # Миграция v8: username пользователя
+        try:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN username VARCHAR(64)"))
+        except Exception:
+            pass
+
         # Миграция v7: таблица истории баланса
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS balance_log (
