@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, date
 
+import pymorphy2
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
@@ -8,6 +9,37 @@ from aiogram.fsm.context import FSMContext
 from states.request_states import TemplateForm
 from database.engine import AsyncSessionFactory
 from database.crud import get_or_create_user
+
+_morph = pymorphy2.MorphAnalyzer()
+
+def _inflect_word(word: str) -> str:
+    """Склоняет слово в творительный падеж, только если оно стоит в именительном падеже."""
+    parsed = _morph.parse(word)
+    if not parsed:
+        return word
+    best = parsed[0]
+    if best.tag.POS not in ("NOUN", "ADJF", "ADJS", "PRTF", "PRTS"):
+        return word
+    if best.tag.case != "nomn":
+        # Слово уже стоит в другом падеже (родит., творит. и т.д.) — не трогаем
+        return word
+    grammemes = {"ablt"}
+    if best.tag.number == "plur":
+        grammemes.add("plur")
+    inflected = best.inflect(grammemes)
+    if inflected:
+        result = inflected.word
+        return result.capitalize() if word[0].isupper() else result
+    return word
+
+
+def to_instrumental(text: str) -> str:
+    """Переводит причину в творительный падеж. Если уже начинается с «с/со» — оставляет как есть."""
+    text = text.strip()
+    if text.lower().startswith(("с ", "со ")):
+        return text
+    converted = " ".join(_inflect_word(w) for w in text.split())
+    return "с " + converted
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -88,7 +120,7 @@ def _dayoff_text(full_name: str, start: date, end: date, reason: str) -> str:
         f"\n\n"
         f"Прошу Вас предоставить мне отпуск без сохранения\n"
         f"заработной платы с {_date_ru(start)}\n"
-        f"по {_date_ru(end)}, в связи {reason}.\n"
+        f"по {_date_ru(end)}, в связи {to_instrumental(reason)}.\n"
         f"\n\n"
         f"{today_str}\n"
         f"Подпись: ___________"
