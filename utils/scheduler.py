@@ -43,7 +43,7 @@ async def send_daily_digest(bot: Bot, group_id: int) -> None:
 
 async def send_reminders(bot: Bot) -> None:
     """Отправляет сотрудникам личное напоминание накануне отгула/отпуска."""
-    if date.today().weekday() >= 5:  # 5=суббота, 6=воскресенье
+    if date.today().weekday() == 5:  # суббота — завтра воскресенье, напоминать не нужно
         return
     try:
         tomorrow = date.today() + timedelta(days=1)
