@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 async def send_daily_digest(bot: Bot, group_id: int) -> None:
     """Отправляет в группу ежедневный дайджест об отсутствующих сотрудниках."""
+    if date.today().weekday() >= 5:  # 5=суббота, 6=воскресенье
+        return
     try:
         async with AsyncSessionFactory() as session:
             rows = await get_absent_today(session)
@@ -41,6 +43,8 @@ async def send_daily_digest(bot: Bot, group_id: int) -> None:
 
 async def send_reminders(bot: Bot) -> None:
     """Отправляет сотрудникам личное напоминание накануне отгула/отпуска."""
+    if date.today().weekday() >= 5:  # 5=суббота, 6=воскресенье
+        return
     try:
         tomorrow = date.today() + timedelta(days=1)
         async with AsyncSessionFactory() as session:
